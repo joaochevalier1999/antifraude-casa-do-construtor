@@ -17,6 +17,53 @@ from reportlab.lib import colors
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(page_title="Central de Cadastros - Casa do Construtor", page_icon="🏗️", layout="wide")
 
+# --- BANCO DE USUÁRIOS E SENHAS ---
+USUARIOS = {
+    "master": {"senha": "master2026", "nome": "Gestor Geral Master", "filial": "Todas", "perfil": "master"},
+    "087_blumenau": {"senha": "cc087", "nome": "Atendente Blumenau", "filial": "087 - Blumenau", "perfil": "user"},
+    "213_indaial": {"senha": "cc213", "nome": "Atendente Indaial", "filial": "213 - Indaial", "perfil": "user"},
+    "250_bc": {"senha": "cc250", "nome": "Atendente Balneário Camboriú", "filial": "250 - Balneário Camboriú", "perfil": "user"},
+    "284_jaragua": {"senha": "cc284", "nome": "Atendente Jaraguá do Sul", "filial": "284 - Jaraguá do Sul", "perfil": "user"},
+    "299_brusque": {"senha": "cc299", "nome": "Atendente Brusque", "filial": "299 - Brusque", "perfil": "user"},
+    "350_itapema": {"senha": "cc350", "nome": "Atendente Itapema", "filial": "350 - Itapema", "perfil": "user"},
+    "360_blumenau2": {"senha": "cc360", "nome": "Atendente Blumenau 02", "filial": "360 - Blumenau 02", "perfil": "user"},
+    "503_timbo": {"senha": "cc503", "nome": "Atendente Timbó", "filial": "503 - Timbó", "perfil": "user"},
+    "560_camboriu": {"senha": "cc560", "nome": "Atendente Camboriú", "filial": "560 - Camboriú", "perfil": "user"},
+    "636_guaramirim": {"senha": "cc636", "nome": "Atendente Guaramirim", "filial": "636 - Guaramirim", "perfil": "user"},
+    "695_tijucas": {"senha": "cc695", "nome": "Atendente Tijucas", "filial": "695 - Tijucas", "perfil": "user"},
+    "733_sao_bento": {"senha": "cc733", "nome": "Atendente São Bento", "filial": "733 - São Bento do Sul", "perfil": "user"},
+}
+
+# --- GERENCIAMENTO DE SESSÃO DE LOGIN ---
+if "logged_in" not in st.session_state:
+    st.session_state["logged_in"] = False
+if "usuario_atual" not in st.session_state:
+    st.session_state["usuario_atual"] = None
+
+# --- TELA DE LOGIN ---
+if not st.session_state["logged_in"]:
+    col_l1, col_l2, col_l3 = st.columns([1, 2, 1])
+    with col_l2:
+        st.image("https://casadoconstrutor.com.br/wp-content/uploads/2021/04/logo-casa-do-construtor.png", width=250)
+        st.title("🔐 Acesso Restrito - Antifraude")
+        st.markdown("Por favor, digite suas credenciais para acessar o sistema da loja.")
+        
+        with st.form("form_login"):
+            usuario_input = st.text_input("Usuário (ID da Loja ou Master)")
+            senha_input = st.text_input("Senha", type="password")
+            btn_entrar = st.form_submit_button("🔓 Entrar no Sistema", type="primary", use_container_width=True)
+            
+            if btn_entrar:
+                user_clean = usuario_input.strip().lower()
+                if user_clean in USUARIOS and USUARIOS[user_clean]["senha"] == senha_input:
+                    st.session_state["logged_in"] = True
+                    st.session_state["usuario_atual"] = USUARIOS[user_clean]
+                    st.success("Login efetuado com sucesso!")
+                    st.rerun()
+                else:
+                    st.error("❌ Usuário ou senha incorretos. Verifique suas credenciais!")
+    st.stop()
+
 # --- CHAVE DA API (Leitura Segura via Secrets) ---
 if "GEMINI_API_KEY" in st.secrets:
     CHAVE_API = st.secrets["GEMINI_API_KEY"]
@@ -33,13 +80,14 @@ except Exception as e:
     st.error(f"Erro ao inicializar o cliente da API: {e}")
     client = None
 
-# --- ARQUIVO DE HISTÓRICO DE AUDITORIA ---
+# --- BANCO DE HISTÓRICO ---
 ARQUIVO_HISTORICO = "historico_analises.csv"
 
-def salvar_no_historico(filial, cliente, equipamento, valor, parecer_texto):
-    data_hora = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+def salvar_no_historico(filial, atendente, cliente, tipo_pessoa, equipamento, valor, parecer_texto):
+    data_hora_dt = datetime.now()
+    data_hora_str = data_hora_dt.strftime("%d/%m/%Y %H:%M:%S")
+    data_dia_str = data_hora_dt.strftime("%d/%m/%Y")
     
-    # Extrai o status principal ([APROVADO], [REPROVADO], etc) do texto do parecer
     status = "ANALISADO"
     if "[APROVADO COM RESTRIÇÃO]" in parecer_texto.upper():
         status = "APROVADO COM RESTRIÇÃO"
@@ -49,9 +97,12 @@ def salvar_no_historico(filial, cliente, equipamento, valor, parecer_texto):
         status = "REPROVADO"
 
     novo_registro = pd.DataFrame([{
-        "Data/Hora": data_hora,
+        "Data/Hora": data_hora_str,
+        "Data_Dia": data_dia_str,
         "Filial": filial,
+        "Atendente": atendente,
         "Cliente": cliente,
+        "Tipo_Pessoa": tipo_pessoa,
         "Equipamento": equipamento,
         "Valor Reposição (R$)": valor,
         "Status Decisão": status
@@ -62,14 +113,13 @@ def salvar_no_historico(filial, cliente, equipamento, valor, parecer_texto):
     else:
         novo_registro.to_csv(ARQUIVO_HISTORICO, mode='a', header=False, index=False, sep=";", encoding="utf-8-sig")
 
-# --- FUNÇÃO TRATADORA DE TEXTO PARA REPORTLAB ---
+# --- FUNÇÃO FORMATADORA DE PDF ---
 def formatar_texto_para_reportlab(texto):
     texto_escapado = html.escape(texto)
     texto_formatado = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', texto_escapado)
     return texto_formatado
 
-# --- FUNÇÃO GERADORA DE PDF DO PARECER ---
-def gerar_pdf_parecer(nome_cliente, loja, equipamento_nome, valor_equipamento, texto_parecer):
+def gerar_pdf_parecer(nome_cliente, tipo_pessoa, loja, equipamento_nome, valor_equipamento, texto_parecer):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer, 
@@ -92,7 +142,7 @@ def gerar_pdf_parecer(nome_cliente, loja, equipamento_nome, valor_equipamento, t
 
     val_f = f"R$ {valor_equipamento:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
     dados_tabela = [
-        [Paragraph("<b>Cliente:</b>", body_style), Paragraph(html.escape(nome_cliente), body_style)],
+        [Paragraph("<b>Cliente:</b>", body_style), Paragraph(f"{html.escape(nome_cliente)} ({tipo_pessoa})", body_style)],
         [Paragraph("<b>Filial Responsável:</b>", body_style), Paragraph(html.escape(loja), body_style)],
         [Paragraph("<b>Equipamento Solicitado:</b>", body_style), Paragraph(html.escape(equipamento_nome), body_style)],
         [Paragraph("<b>Valor de Reposição:</b>", body_style), Paragraph(val_f, body_style)],
@@ -122,22 +172,6 @@ def gerar_pdf_parecer(nome_cliente, loja, equipamento_nome, valor_equipamento, t
     doc.build(story)
     buffer.seek(0)
     return buffer.getvalue()
-
-# --- LISTA DE FILIAIS ---
-LISTA_LOJAS = [
-    "087 - Blumenau",
-    "213 - Indaial",
-    "250 - Balneário Camboriú",
-    "284 - Jaraguá do Sul",
-    "299 - Brusque",
-    "350 - Itapema",
-    "360 - Blumenau 02",
-    "503 - Timbó",
-    "560 - Camboriú",
-    "636 - Guaramirim",
-    "695 - Tijucas",
-    "733 - São Bento do Sul"
-]
 
 # --- CATÁLOGO COMPLETO DE EQUIPAMENTOS ---
 RAW_CATALOGO = {
@@ -548,30 +582,62 @@ CATALOGO_EQUIPAMENTOS = {" ".join(k.split()): v for k, v in RAW_CATALOGO.items()
 OPCAO_OUTRO = "➕ OUTRO EQUIPAMENTO (Digitar manualmente)"
 opcoes_equipamentos = sorted(list(CATALOGO_EQUIPAMENTOS.keys())) + [OPCAO_OUTRO]
 
-# --- CABEÇALHO DO SITE ---
-st.image("https://casadoconstrutor.com.br/wp-content/uploads/2021/04/logo-casa-do-construtor.png", width=220)
-st.title("🛡️ Central de Análise Antifraude")
+# --- CABEÇALHO DO APLICATIVO COM BOTÃO DE LOGOUT ---
+usr_info = st.session_state["usuario_atual"]
 
-# Navegação por Abas (Nova Funcionalidade)
-aba_analise, aba_historico = st.tabs(["🚀 Nova Análise Antifraude", "📊 Histórico & Auditoria"])
+col_logo, col_usr = st.columns([3, 1])
+with col_logo:
+    st.image("https://casadoconstrutor.com.br/wp-content/uploads/2021/04/logo-casa-do-construtor.png", width=200)
+    st.title("🛡️ Central de Análise Antifraude")
 
-with aba_analise:
-    st.caption(f"Sistema Interno de Validação | Catálogo: **{len(CATALOGO_EQUIPAMENTOS)} equipamentos**")
+with col_usr:
+    st.markdown(f"👤 **{usr_info['nome']}**")
+    st.caption(f"📍 Unidade: {usr_info['filial']}")
+    if st.button("🚪 Sair / Logout", type="secondary"):
+        st.session_state["logged_in"] = False
+        st.session_state["usuario_atual"] = None
+        st.rerun()
 
-    # --- FORMULÁRIO DE ENTRADA REATIVO ---
-    col1, col2 = st.columns(2)
-    with col1:
-        loja = st.selectbox("Filial Responsável", LISTA_LOJAS)
-    with col2:
-        nome_cliente = st.text_input("Nome Completo do Cliente")
+st.markdown("---")
+
+# --- NAVEGAÇÃO CONDICIONAL (MASTER VS LOJA) ---
+eh_master = usr_info["perfil"] == "master"
+
+if eh_master:
+    lista_abas = ["🚀 Nova Análise Antifraude", "📊 Master Dashboard", "📋 Histórico Completo"]
+else:
+    lista_abas = ["🚀 Nova Análise Antifraude", "📋 Histórico de Análises"]
+
+abas = st.tabs(lista_abas)
+
+# --- ABA 1: FORMULÁRIO DE NOVA ANÁLISE ---
+with abas[0]:
+    st.caption(f"Validação de Documentos e Risco Financeiro | Catálogo: **{len(CATALOGO_EQUIPAMENTOS)} equipamentos**")
+
+    col_a1, col_a2, col_a3 = st.columns([1, 2, 1])
+    with col_a1:
+        if eh_master:
+            loja = st.selectbox("Filial Responsável", [
+                "087 - Blumenau", "213 - Indaial", "250 - Balneário Camboriú", "284 - Jaraguá do Sul",
+                "299 - Brusque", "350 - Itapema", "360 - Blumenau 02", "503 - Timbó", "560 - Camboriú",
+                "636 - Guaramirim", "695 - Tijucas", "733 - São Bento do Sul"
+            ])
+        else:
+            loja = usr_info["filial"]
+            st.text_input("Filial Responsável", value=loja, disabled=True)
+
+    with col_a2:
+        nome_cliente = st.text_input("Nome Completo do Cliente ou Razão Social")
+
+    with col_a3:
+        tipo_pessoa = st.radio("Tipo de Pessoa", ["PF", "PJ"], horizontal=True, help="PF = Pessoa Física | PJ = Pessoa Jurídica")
 
     equipamento_selecionado = st.selectbox(
         "🔍 Buscar/Selecionar Equipamento Solicitado", 
         opcoes_equipamentos,
         index=None,
         placeholder="🔍 Digite para pesquisar ou escolha na lista...",
-        key="equipamento_selectbox",
-        help="Digite o nome para pesquisar. Caso não encontre, selecione a última opção (OUTRO EQUIPAMENTO)."
+        key="equipamento_selectbox"
     )
 
     equipamento_nome = None
@@ -593,17 +659,16 @@ with aba_analise:
 
     st.markdown("### 📎 Anexos (Documentos / Selfie / Comprovante)")
     documentos = st.file_uploader(
-        "Arraste fotos ou PDFs dos documentos do cliente (RG, CNH, Selfie, Comprovante de Residência)", 
+        "Arraste fotos ou PDFs dos documentos do cliente (RG, CNH, Selfie, Comprovante de Residência/Contrato Social)", 
         accept_multiple_files=True, 
         type=['png', 'jpg', 'jpeg', 'pdf']
     )
 
     submit = st.button("🚀 Iniciar Análise Antifraude", type="primary")
 
-    # --- PROCESSAMENTO COM A IA ---
     if submit:
         if not nome_cliente or not equipamento_nome or not documentos:
-            st.error("⚠️ Por favor, preencha o Nome do Cliente, escolha ou digite o Equipamento e anexe os Documentos!")
+            st.error("⚠️ Por favor, preencha o Nome do Cliente, escolha/digite o Equipamento e anexe os Documentos!")
         elif client is None:
             st.error("❌ Falha na conexão com a API do Google.")
         else:
@@ -628,31 +693,33 @@ with aba_analise:
                     
                     DADOS DO CADASTRO E DA OPERAÇÃO:
                     - Cliente Cadastrado: {nome_cliente}
+                    - Tipo de Pessoa: {tipo_pessoa} (Pessoa Física / Pessoa Jurídica)
                     - Filial: {loja}
+                    - Atendente: {usr_info['nome']}
                     - Equipamento Solicitado: {equipamento_nome}
                     - Valor de Reposição do Equipamento: R$ {valor_equipamento:,.2f}
                     
                     DIRETRIZES DE VALIDAÇÃO ANTIMODELOCAUTELA (RIGOROSO):
                     
-                    1. CHECKLIST DOCUMENTAL E ESTRUTURAL (RG / CNH):
-                       - Extraia e informe expressamente: Nome Completo no Documento, Número do CPF, Número do Documento e Órgão Emissor (ex: SSP/SC, DETRAN/SP).
-                       - Avalie se o Órgão Emissor possui formato coerente para o estado de emissão.
-                       - Verifique se o nome do cliente informado no formulário ({nome_cliente}) coincide 100% com o documento.
+                    1. CHECKLIST DOCUMENTAL E ESTRUTURAL (RG / CNH / PJ):
+                       - Extraia e informe expressamente: Nome Completo no Documento, Número do CPF/CNPJ, Número do Documento e Órgão Emissor.
+                       - Se for PJ, avalie a consonância dos documentos do sócio/representante.
+                       - Verifique se o nome do cliente informado no formulário ({nome_cliente}) coincide com o documento.
                        - Analise indícios de manipulação digital (fontes desproporcionais, cortes, rasuras, fundos colados).
 
                     2. BIOMETRIA FACIAL E PROVA DE VIDA:
-                       - Compare os traços faciais entre a Selfie do cliente e a Foto do Documento (RG/CNH).
-                       - Identifique se a selfie parece ser uma foto real da pessoa ou foto de foto/tela (reflexos, bordas de monitor, pixels).
+                       - Compare os traços faciais entre a Selfie do cliente/sócio e a Foto do Documento.
+                       - Identifique se a selfie parece ser uma foto real da pessoa ou foto de tela (reflexos, pixels).
 
                     3. COMPROVANTE DE ENDEREÇO:
-                       - Verifique se o comprovante é recente, legível e se está no nome do cliente ou de parente direto.
+                       - Verifique se o comprovante é recente, legível e se está no nome do cliente/sócio ou empresa.
 
                     4. ANÁLISE DE RISCO FINANCEIRO x PATRIMÔNIO:
-                       - Relacione o nível de exigência documental ao valor de reposição do bem envolvido na locação (R$ {valor_equipamento:,.2f}). Equipamentos de alto valor de reposição exigem 100% de consistência.
+                       - Relacione o nível de exigência documental ao valor de reposição do bem envolvido na locação (R$ {valor_equipamento:,.2f}).
 
                     FORMATO DO PARECER TÉCNICO:
                     - Status em destaque: [APROVADO], [APROVADO COM RESTRIÇÃO] ou [REPROVADO].
-                    - Tabela/Resumo dos Dados Extraídos (Nome do Doc, CPF, Órgão Emissor, Status Biométrico).
+                    - Tabela/Resumo dos Dados Extraídos.
                     - Justificativa técnica detalhada recomendando a liberação ou retenção da locação.
                     """
 
@@ -669,6 +736,7 @@ with aba_analise:
                     
                     pdf_bytes = gerar_pdf_parecer(
                         nome_cliente=nome_cliente,
+                        tipo_pessoa=tipo_pessoa,
                         loja=loja,
                         equipamento_nome=equipamento_nome,
                         valor_equipamento=valor_equipamento,
@@ -676,10 +744,11 @@ with aba_analise:
                     )
                     st.session_state['pdf_bytes'] = pdf_bytes
 
-                    # GRAVAÇÃO AUTOMÁTICA NO HISTÓRICO DE AUDITORIA
                     salvar_no_historico(
                         filial=loja,
+                        atendente=usr_info['nome'],
                         cliente=nome_cliente,
+                        tipo_pessoa=tipo_pessoa,
                         equipamento=equipamento_nome,
                         valor=valor_equipamento,
                         parecer_texto=texto_resultado
@@ -688,7 +757,6 @@ with aba_analise:
                 except Exception as e:
                     st.error(f"Erro no processamento da análise: {e}")
 
-    # --- EXIBIÇÃO DO RESULTADO E DOWNLOAD DO PDF ---
     if 'resultado_parecer' in st.session_state and st.session_state['resultado_parecer']:
         st.success("Análise Concluída com Sucesso!")
         st.markdown("---")
@@ -704,30 +772,81 @@ with aba_analise:
             type="primary"
         )
 
-# --- ABA 2: HISTÓRICO & AUDITORIA ---
-with aba_historico:
-    st.subheader("📋 Registro de Análises Antifraude Realizadas")
-    st.caption("Consolidado de consultas para controle de risco corporativo.")
+# --- ABA 2: MASTER DASHBOARD (OU HISTÓRICO SE USER COMUM) ---
+if eh_master:
+    with abas[1]:
+        st.title("📈 Painel Executivo de Gestão Antifraude")
+        st.caption("Visão estratégica e consolidação de indicadores de risco das 12 filiais.")
 
-    if os.path.exists(ARQUIVO_HISTORICO):
-        df_hist = pd.read_csv(ARQUIVO_HISTORICO, sep=";", encoding="utf-8-sig")
-        
-        # Métricas Rápidas no Topo
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Total de Análises", len(df_hist))
-        m2.metric("Aprovados", len(df_hist[df_hist['Status Decisão'] == 'APROVADO']))
-        m3.metric("Reprovados", len(df_hist[df_hist['Status Decisão'] == 'REPROVADO']))
-        
-        st.markdown("---")
-        st.dataframe(df_hist, use_container_width=True)
+        if os.path.exists(ARQUIVO_HISTORICO):
+            df = pd.read_csv(ARQUIVO_HISTORICO, sep=";", encoding="utf-8-sig")
+            
+            hoje_str = datetime.now().strftime("%d/%m/%Y")
+            df_hoje = df[df['Data_Dia'] == hoje_str] if 'Data_Dia' in df.columns else df
 
-        # Botão para exportar a planilha completa em CSV
-        csv_bytes = df_hist.to_csv(index=False, sep=";", encoding="utf-8-sig").encode('utf-8-sig')
-        st.download_button(
-            label="📊 Baixar Planilha Geral de Auditoria (CSV)",
-            data=csv_bytes,
-            file_name=f"Auditoria_Antifraude_{datetime.now().strftime('%Y%m%d')}.csv",
-            mime="text/csv"
-        )
-    else:
-        st.info("Nenhuma análise foi gravada ainda. Execute uma validação na aba principal para inaugurar o histórico!")
+            # --- LINHA DE MÉTRICAS PRINCIPAIS ---
+            m1, m2, m3, m4, m5 = st.columns(5)
+            
+            m1.metric("📅 Cadastros Hoje", len(df_hoje))
+            
+            qtd_pf = len(df[df['Tipo_Pessoa'] == 'PF']) if 'Tipo_Pessoa' in df.columns else 0
+            qtd_pj = len(df[df['Tipo_Pessoa'] == 'PJ']) if 'Tipo_Pessoa' in df.columns else 0
+            m2.metric("👤 Pessoa Física (PF)", qtd_pf)
+            m3.metric("🏢 Pessoa Jurídica (PJ)", qtd_pj)
+            
+            aprovados = len(df[df['Status Decisão'] == 'APROVADO'])
+            m4.metric("✅ Total Aprovados", aprovados)
+            
+            reprovados = len(df[df['Status Decisão'] == 'REPROVADO'])
+            m5.metric("❌ Total Reprovados", reprovados)
+
+            st.markdown("---")
+
+            col_d1, col_d2 = st.columns(2)
+
+            with col_d1:
+                st.subheader("🏆 Máquinas Mais Solicitadas")
+                if not df.empty and 'Equipamento' in df.columns:
+                    top_maquinas = df['Equipamento'].value_counts().head(5)
+                    st.bar_chart(top_maquinas)
+                else:
+                    st.info("Aguardando dados para gráfico de máquinas.")
+
+            with col_d2:
+                st.subheader("📍 Análises por Filial")
+                if not df.empty and 'Filial' in df.columns:
+                    filial_counts = df['Filial'].value_counts()
+                    st.bar_chart(filial_counts)
+                else:
+                    st.info("Aguardando dados para gráfico de filiais.")
+
+        else:
+            st.info("Nenhuma análise cadastrada no histórico ainda.")
+
+    # Histórico na terceira aba para o Master
+    with abas[2]:
+        st.subheader("📋 Registro de Análises Antifraude Realizadas")
+        if os.path.exists(ARQUIVO_HISTORICO):
+            df_hist = pd.read_csv(ARQUIVO_HISTORICO, sep=";", encoding="utf-8-sig")
+            st.dataframe(df_hist, use_container_width=True)
+            csv_bytes = df_hist.to_csv(index=False, sep=";", encoding="utf-8-sig").encode('utf-8-sig')
+            st.download_button(
+                label="📊 Baixar Planilha Geral de Auditoria (CSV)",
+                data=csv_bytes,
+                file_name=f"Auditoria_Antifraude_{datetime.now().strftime('%Y%m%d')}.csv",
+                mime="text/csv"
+            )
+        else:
+            st.info("Nenhum histórico disponível.")
+
+else:
+    # Histórico comum para loja na segunda aba
+    with abas[1]:
+        st.subheader("📋 Histórico de Análises da Unidade")
+        if os.path.exists(ARQUIVO_HISTORICO):
+            df_hist = pd.read_csv(ARQUIVO_HISTORICO, sep=";", encoding="utf-8-sig")
+            # Filtra apenas a filial do usuário logado
+            df_loja = df_hist[df_hist['Filial'] == usr_info['filial']]
+            st.dataframe(df_loja, use_container_width=True)
+        else:
+            st.info("Nenhum histórico disponível ainda para esta loja.")
