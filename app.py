@@ -74,7 +74,7 @@ if not st.session_state["logged_in"]:
                         st.error("❌ Credenciais inválidas.")
     st.stop()
 
-# --- AUTENTICAÇÃO VIA CONTA DE SERVIÇO (VERTEX AI) ---
+# --- AUTENTICAÇÃO VIA CONTA DE SERVIÇO (VERTEX AI / AGENT PLATFORM) ---
 token_acesso_valido = None
 gcp_project_id = None
 erro_auth = None
@@ -84,7 +84,7 @@ if GOOGLE_AUTH_INSTALLED and "GCP_CREDENTIALS" in st.secrets:
         creds_json = json.loads(st.secrets["GCP_CREDENTIALS"])
         gcp_project_id = creds_json.get("project_id")
         
-        # ESCOPO OFICIAL DO VERTEX AI / GOOGLE CLOUD PLATFORM
+        # ESCOPO OFICIAL DO GOOGLE CLOUD
         escopos = ['https://www.googleapis.com/auth/cloud-platform']
         credenciais = service_account.Credentials.from_service_account_info(creds_json, scopes=escopos)
         
@@ -109,7 +109,7 @@ with st.sidebar:
     if not GOOGLE_AUTH_INSTALLED:
         st.error("🔴 Falta adicionar `google-auth` no requirements.txt do GitHub!")
     elif token_acesso_valido and gcp_project_id:
-        st.success(f"🟢 Vertex AI Conectado!\nProjeto: `{gcp_project_id}`")
+        st.success(f"🟢 Nuvem Autenticada!\nProjeto: `{gcp_project_id}`")
     else:
         st.error("🔴 JSON de Serviço não configurado nos Secrets.")
         if erro_auth: st.caption(erro_auth)
@@ -220,9 +220,9 @@ with abas[0]:
         if not nome_cliente or not equip_nome or not documentos:
             st.error("⚠️ Preencha Cliente, Equipamento e Anexos.")
         elif not token_acesso_valido or not gcp_project_id:
-            st.error("❌ Erro de Autenticação Vertex AI. Verifique o painel na barra lateral.")
+            st.error("❌ Erro de Autenticação na Nuvem. Verifique o painel na barra lateral.")
         else:
-            with st.spinner('A IA está processando as matrizes e documentos via Vertex AI...'):
+            with st.spinner('A IA (Gemini 2.5 Flash) está processando os documentos com máxima segurança...'):
                 try:
                     payload_parts = []
                     for doc in documentos:
@@ -243,8 +243,8 @@ with abas[0]:
                     """
                     payload_parts.append({"text": prompt})
 
-                    # URL VERTEX AI COM O NOME OFICIAL DA VERSÃO
-                    url_api = f"https://us-central1-aiplatform.googleapis.com/v1/projects/{gcp_project_id}/locations/us-central1/publishers/google/models/gemini-1.5-flash-001:generateContent"
+                    # O GRANDE SEGREDO: APONTANDO PARA O MODELO ATUALIZADO DO GOOGLE (GEMINI 2.5 FLASH)
+                    url_api = f"https://us-central1-aiplatform.googleapis.com/v1/projects/{gcp_project_id}/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent"
                     
                     headers_api = {
                         "Content-Type": "application/json",
@@ -252,7 +252,6 @@ with abas[0]:
                     }
                     data_api = {"contents": [{"parts": payload_parts}], "generationConfig": {"temperature": 0.1}}
 
-                    # Chamada corrigida
                     res = requests.post(url_api, json=data_api, headers=headers_api)
 
                     if res.status_code == 200:
@@ -268,6 +267,6 @@ with abas[0]:
                     st.error(f"Erro na execução da requisição: {e}")
 
     if 'resultado_parecer' in st.session_state and st.session_state['resultado_parecer']:
-        st.success("✅ Avaliação Finalizada!")
+        st.success("✅ Avaliação Finalizada com Sucesso!")
         st.markdown(st.session_state['resultado_parecer'])
         st.download_button("📄 Baixar Relatório PDF", data=st.session_state['pdf_bytes'], file_name="Relatorio.pdf", mime="application/pdf", type="primary")
