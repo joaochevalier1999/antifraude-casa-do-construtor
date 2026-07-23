@@ -42,10 +42,21 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- USUÁRIOS ---
+# --- BANCO DE USUÁRIOS E SENHAS ---
 USUARIOS = {
     "master": {"senha": "master2026", "nome": "Gestor Geral Master", "filial": "Todas", "perfil": "master"},
-    "087_blumenau": {"senha": "cc087", "nome": "Atendente Blumenau", "filial": "087 - Blumenau", "perfil": "user"}
+    "087_blumenau": {"senha": "cc087", "nome": "Atendente Blumenau", "filial": "087 - Blumenau", "perfil": "user"},
+    "213_indaial": {"senha": "cc213", "nome": "Atendente Indaial", "filial": "213 - Indaial", "perfil": "user"},
+    "250_bc": {"senha": "cc250", "nome": "Atendente Balneário Camboriú", "filial": "250 - Balneário Camboriú", "perfil": "user"},
+    "284_jaragua": {"senha": "cc284", "nome": "Atendente Jaraguá do Sul", "filial": "284 - Jaraguá do Sul", "perfil": "user"},
+    "299_brusque": {"senha": "cc299", "nome": "Atendente Brusque", "filial": "299 - Brusque", "perfil": "user"},
+    "350_itapema": {"senha": "cc350", "nome": "Atendente Itapema", "filial": "350 - Itapema", "perfil": "user"},
+    "360_blumenau2": {"senha": "cc360", "nome": "Atendente Blumenau 02", "filial": "360 - Blumenau 02", "perfil": "user"},
+    "503_timbo": {"senha": "cc503", "nome": "Atendente Timbó", "filial": "503 - Timbó", "perfil": "user"},
+    "560_camboriu": {"senha": "cc560", "nome": "Atendente Camboriú", "filial": "560 - Camboriú", "perfil": "user"},
+    "636_guaramirim": {"senha": "cc636", "nome": "Atendente Guaramirim", "filial": "636 - Guaramirim", "perfil": "user"},
+    "695_tijucas": {"senha": "cc695", "nome": "Atendente Tijucas", "filial": "695 - Tijucas", "perfil": "user"},
+    "733_sao_bento": {"senha": "cc733", "nome": "Atendente São Bento", "filial": "733 - São Bento do Sul", "perfil": "user"},
 }
 
 if "logged_in" not in st.session_state: 
@@ -164,7 +175,14 @@ def gerar_pdf_parecer(nome_cliente, tipo_pessoa, prazo, loja, equipamento_nome, 
     buffer.seek(0)
     return buffer.getvalue()
 
-CATALOGO_EQUIPAMENTOS = {"BETONEIRA 400L BIVOLT": 5700.0, "COMPACTADOR A GASOLINA": 15550.0}
+# --- CATÁLOGO DE EQUIPAMENTOS ---
+RAW_CATALOGO = {
+    "ACABADORA PA ACABAMENTO 36\"": 200.0, "ACABADORA ACV 36\" GASOLINA": 14000.0, "ACABADORA BFG 100 GASOLINA": 13500.0,
+    "ACABADORA BUFFALO BFG 100 GASOLINA": 13500.0, "ACABADORA CSM AC36 GASOLINA": 11900.0, "ACABADORA CT36 5A GASOLINA": 14000.0,
+    "BETONEIRA 400L INFINITY BIVOLT": 5700.0, "COMPACTADOR ate 72KG GASOLINA": 15550.0, "GERADOR 13KVA BFGE13000 GASOLINA": 8140.0,
+    "GUINCHO de COLUNA 350KG 220V": 5730.0, "LAVADORA AP HD 585 PROFI S 220V": 2600.0, "ROMPEDOR 29.9KG TE3000 AVR 220V": 23980.0
+}
+CATALOGO_EQUIPAMENTOS = {" ".join(k.split()): v for k, v in RAW_CATALOGO.items()}
 OPCAO_OUTRO = "➕ OUTRO EQUIPAMENTO (Manual)"
 opcoes_equipamentos = sorted(list(CATALOGO_EQUIPAMENTOS.keys())) + [OPCAO_OUTRO]
 
@@ -179,8 +197,13 @@ with abas[0]:
         st.markdown("### 1️⃣ Dados do Cliente e Operação")
         col_a1, col_a2 = st.columns(2)
         with col_a1:
-            loja = st.selectbox("🏢 Filial Responsável", ["087 - Blumenau", "Todas"]) if eh_master else usr_info["filial"]
+            loja = st.selectbox("🏢 Filial Responsável", [
+                "087 - Blumenau", "213 - Indaial", "350 - Itapema", "250 - Balneário Camboriú",
+                "284 - Jaraguá do Sul", "299 - Brusque", "360 - Blumenau 02", "503 - Timbó",
+                "560 - Camboriú", "636 - Guaramirim", "695 - Tijucas", "733 - São Bento do Sul", "Todas"
+            ]) if eh_master else usr_info["filial"]
             if not eh_master: st.text_input("🏢 Filial Responsável", value=loja, disabled=True)
+            
             tipo_cliente = st.radio("👤 Tipo de Cadastro", ["Pessoa Física (PF)", "Pessoa Jurídica (PJ)"], horizontal=True)
             nome_cliente = st.text_input("Nome Completo ou Razão Social")
             subtipo_pj, nome_solicitante, contato_solicitante = None, None, None
@@ -226,7 +249,7 @@ with abas[0]:
                     payload_parts = []
                     for doc in documentos:
                         b64_data = base64.b64encode(doc.getvalue()).decode("utf-8")
-                        # CORREÇÃO CRÍTICA DO VERTEX AI: inlineData e mimeType em camelCase
+                        # PARÂMETROS CORRETOS VERTEX AI EM CAMELCASE
                         payload_parts.append({
                             "inlineData": {
                                 "mimeType": doc.type,
@@ -248,15 +271,15 @@ with abas[0]:
                     """
                     payload_parts.append({"text": prompt})
 
-                    # O MODELO OFICIAL DA EMPRESA
-                    url_api = f"https://us-central1-aiplatform.googleapis.com/v1/projects/{gcp_project_id}/locations/us-central1/publishers/google/models/gemini-1.5-flash-001:generateContent"
+                    # AQUI ESTÁ A CORREÇÃO: URL APONTANDO RIGOROSAMENTE PARA O NOVO GEMINI 2.5 FLASH!
+                    url_api = f"https://us-central1-aiplatform.googleapis.com/v1/projects/{gcp_project_id}/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent"
                     
                     headers_api = {
                         "Content-Type": "application/json",
                         "Authorization": f"Bearer {token_acesso_valido}"
                     }
                     
-                    # CORREÇÃO CRÍTICA DO VERTEX AI: Incluir o "role": "user" explicitamente
+                    # FORMATO OBRIGATÓRIO DE ARRAY DO VERTEX AI COM ROLE USER
                     data_api = {
                         "contents": [
                             {
