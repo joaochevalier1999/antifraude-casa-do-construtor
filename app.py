@@ -74,7 +74,7 @@ if not st.session_state["logged_in"]:
                         st.error("❌ Credenciais inválidas.")
     st.stop()
 
-# --- AUTENTICAÇÃO VIA CONTA DE SERVIÇO (VERTEX AI / AGENT PLATFORM) ---
+# --- AUTENTICAÇÃO VIA CONTA DE SERVIÇO (VERTEX AI) ---
 token_acesso_valido = None
 gcp_project_id = None
 erro_auth = None
@@ -84,7 +84,6 @@ if GOOGLE_AUTH_INSTALLED and "GCP_CREDENTIALS" in st.secrets:
         creds_json = json.loads(st.secrets["GCP_CREDENTIALS"])
         gcp_project_id = creds_json.get("project_id")
         
-        # ESCOPO OFICIAL DO GOOGLE CLOUD
         escopos = ['https://www.googleapis.com/auth/cloud-platform']
         credenciais = service_account.Credentials.from_service_account_info(creds_json, scopes=escopos)
         
@@ -222,12 +221,18 @@ with abas[0]:
         elif not token_acesso_valido or not gcp_project_id:
             st.error("❌ Erro de Autenticação na Nuvem. Verifique o painel na barra lateral.")
         else:
-            with st.spinner('A IA (Gemini 2.5 Flash) está processando os documentos com máxima segurança...'):
+            with st.spinner('A IA está processando os documentos com máxima segurança...'):
                 try:
                     payload_parts = []
                     for doc in documentos:
                         b64_data = base64.b64encode(doc.getvalue()).decode("utf-8")
-                        payload_parts.append({"inline_data": {"mime_type": doc.type, "data": b64_data}})
+                        # CORREÇÃO CRÍTICA DO VERTEX AI: inlineData e mimeType em camelCase
+                        payload_parts.append({
+                            "inlineData": {
+                                "mimeType": doc.type,
+                                "data": b64_data
+                            }
+                        })
 
                     prompt = f"""
                     Analista Master de Risco. 
@@ -243,14 +248,26 @@ with abas[0]:
                     """
                     payload_parts.append({"text": prompt})
 
-                    # O GRANDE SEGREDO: APONTANDO PARA O MODELO ATUALIZADO DO GOOGLE (GEMINI 2.5 FLASH)
-                    url_api = f"https://us-central1-aiplatform.googleapis.com/v1/projects/{gcp_project_id}/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent"
+                    # O MODELO OFICIAL DA EMPRESA
+                    url_api = f"https://us-central1-aiplatform.googleapis.com/v1/projects/{gcp_project_id}/locations/us-central1/publishers/google/models/gemini-1.5-flash-001:generateContent"
                     
                     headers_api = {
                         "Content-Type": "application/json",
                         "Authorization": f"Bearer {token_acesso_valido}"
                     }
-                    data_api = {"contents": [{"parts": payload_parts}], "generationConfig": {"temperature": 0.1}}
+                    
+                    # CORREÇÃO CRÍTICA DO VERTEX AI: Incluir o "role": "user" explicitamente
+                    data_api = {
+                        "contents": [
+                            {
+                                "role": "user",
+                                "parts": payload_parts
+                            }
+                        ], 
+                        "generationConfig": {
+                            "temperature": 0.1
+                        }
+                    }
 
                     res = requests.post(url_api, json=data_api, headers=headers_api)
 
