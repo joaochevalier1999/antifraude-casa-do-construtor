@@ -39,6 +39,12 @@ st.markdown("""
     div.stButton > button[kind="primary"]:hover { background-color: #FBC02D; color: #003366; border: 2px solid #FBC02D; }
     div[data-testid="stVerticalBlock"] > div[style*="border"] { border-radius: 12px; background-color: #FFFFFF; box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.05); border: 1px solid #E0E0E0; padding: 15px; }
     #MainMenu {visibility: hidden;} footer {visibility: hidden;}
+    
+    /* Customização do título da resposta da IA */
+    .resultado-titulo { font-size: 32px !important; font-weight: 900 !important; margin-bottom: 20px; text-align: center; }
+    .resultado-aprovado { color: #2E7D32 !important; }
+    .resultado-reprovado { color: #C62828 !important; }
+    .resultado-restricao { color: #F57F17 !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -117,11 +123,11 @@ with st.sidebar:
     
     st.markdown("🔍 **Status da Conexão AI**")
     if not GOOGLE_AUTH_INSTALLED:
-        st.error("🔴 Falta adicionar `google-auth` no requirements.txt do GitHub!")
+        st.error("🔴 Falta `google-auth` no requirements.txt!")
     elif token_acesso_valido and gcp_project_id:
-        st.success(f"🟢 Nuvem Autenticada!\nProjeto: `{gcp_project_id}`")
+        st.success(f"🟢 Nuvem Autenticada!\n`{gcp_project_id}`")
     else:
-        st.error("🔴 JSON de Serviço não configurado nos Secrets.")
+        st.error("🔴 JSON de Serviço ausente nos Secrets.")
         if erro_auth: st.caption(erro_auth)
 
     st.markdown("---")
@@ -133,9 +139,10 @@ ARQUIVO_HISTORICO = "historico_analises.csv"
 def salvar_no_historico(filial, atendente, cliente, tipo_pessoa, equipamento, valor, prazo, parecer_texto):
     data_hora_dt = datetime.now()
     status = "ANALISADO"
-    if "[APROVADO COM RESTRIÇÃO]" in parecer_texto.upper(): status = "APROVADO COM RESTRIÇÃO"
-    elif "[APROVADO]" in parecer_texto.upper(): status = "APROVADO"
-    elif "[REPROVADO]" in parecer_texto.upper(): status = "REPROVADO"
+    parecer_up = parecer_texto.upper()
+    if "[APROVADO COM RESTRIÇÃO]" in parecer_up or "RESTRIÇÃO" in parecer_up: status = "APROVADO COM RESTRIÇÃO"
+    elif "[APROVADO]" in parecer_up or "🟢 APROVADO" in parecer_up: status = "APROVADO"
+    elif "[REPROVADO]" in parecer_up or "🔴 REPROVADO" in parecer_up or "NEGADO" in parecer_up: status = "REPROVADO"
 
     novo_registro = pd.DataFrame([{
         "Data/Hora": data_hora_dt.strftime("%d/%m/%Y %H:%M:%S"), "Data_Dia": data_hora_dt.strftime("%d/%m/%Y"),
@@ -146,7 +153,11 @@ def salvar_no_historico(filial, atendente, cliente, tipo_pessoa, equipamento, va
     else: novo_registro.to_csv(ARQUIVO_HISTORICO, mode='a', header=False, index=False, sep=";", encoding="utf-8-sig")
 
 # --- GERADOR DE PDF ---
-def formatar_texto_para_reportlab(texto): return re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', html.escape(texto))
+def formatar_texto_para_reportlab(texto): 
+    # Transforma # e ** do Markdown em tags HTML seguras para o PDF
+    t = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', html.escape(texto))
+    t = re.sub(r'^#+\s+(.*)', r'<b>\1</b>', t) 
+    return t
 
 def gerar_pdf_parecer(nome_cliente, tipo_pessoa, prazo, loja, equipamento_nome, valor_equipamento, texto_parecer):
     buffer = io.BytesIO()
@@ -190,8 +201,9 @@ opcoes_equipamentos = sorted(list(CATALOGO_EQUIPAMENTOS.keys())) + [OPCAO_OUTRO]
 st.title("🛡️ Central de Risco e Crédito")
 st.markdown("Bem-vindo ao portal unificado de validação de locações.")
 
-abas = st.tabs(["🚀 Nova Análise", "📊 Dashboard Executivo", "📋 Histórico Geral"] if eh_master else ["🚀 Nova Análise", "📋 Meu Histórico"])
+abas = st.tabs(["🚀 Nova Análise", "📊 Dashboard Gerencial", "📋 Histórico Geral"] if eh_master else ["🚀 Nova Análise", "📋 Meu Histórico"])
 
+# --- ABA 1: NOVA ANÁLISE ---
 with abas[0]:
     with st.container(border=True):
         st.markdown("### 1️⃣ Dados do Cliente e Operação")
@@ -207,19 +219,32 @@ with abas[0]:
             tipo_cliente = st.radio("👤 Tipo de Cadastro", ["Pessoa Física (PF)", "Pessoa Jurídica (PJ)"], horizontal=True)
             nome_cliente = st.text_input("Nome Completo ou Razão Social")
             subtipo_pj, nome_solicitante, contato_solicitante = None, None, None
+            
             if tipo_cliente == "Pessoa Jurídica (PJ)":
                 subtipo_pj = st.selectbox("🏢 Natureza Jurídica", ["Empresa Padrão (LTDA/SA)", "Condomínio", "MEI"])
                 col_pj1, col_pj2 = st.columns(2)
-                with col_pj1: nome_solicitante = st.text_input("Quem está solicitando?")
-                with col_pj2: contato_solicitante = st.text_input("E-mail ou WhatsApp")
+                with col_pj1: nome_solicitante = st.text_input("Quem está solicitando no balcão/WhatsApp?" if subtipo_pj != "Condomínio" else "Nome do Síndico Responsável")
+                with col_pj2: contato_solicitante = st.text_input("E-mail corporativo ou WhatsApp")
 
         with col_a2:
             referencias = ""
             if tipo_cliente == "Pessoa Física (PF)":
+                st.warning("⚠️ **Atenção:** Pagamento a prazo não permitido para Pessoa Física.")
                 forma_pagamento = st.selectbox("Condição de Pagamento Permitida", ["À Vista / Débito / Pix (Antecipado)"])
             else:
-                forma_pagamento = st.selectbox("💳 Condição de Pagamento", ["À Vista / Débito / Pix", "Boleto 7 dias", "Boleto 28 dias"])
-                if "Boleto" in forma_pagamento: referencias = st.text_area("📞 Feedback das Referências Comerciais")
+                # LISTA DE BOLETOS ATUALIZADA
+                forma_pagamento = st.selectbox("💳 Condição de Pagamento Solicitada", ["À Vista / Débito / Pix", "Boleto 7 dias", "Boleto 14 dias", "Boleto 21 dias", "Boleto 28 dias"])
+                
+                # REGRAS DINÂMICAS DE DOCUMENTAÇÃO NA TELA
+                if subtipo_pj == "Empresa Padrão (LTDA/SA)":
+                    st.info("📄 **Checklist Documental Obrigatório:**\n- Contrato Social Atualizado.\n- CNH ou RG de quem está solicitando.")
+                    referencias = st.text_area("📞 Feedback das Referências Comerciais (Opcional, mas ajuda na aprovação)", placeholder="O que os fornecedores disseram sobre o histórico deste CNPJ?")
+                elif subtipo_pj == "Condomínio":
+                    st.warning("📄 **Checklist Documental Obrigatório:**\n- Ata atualizada de eleição do Síndico.\n- Contato direto do Síndico.\n\n⚠️ **Regra Rígida:** Máximo de 7 dias no boleto.")
+                    if "Boleto" in forma_pagamento: referencias = st.text_area("📞 Referências do Condomínio (Opcional)")
+                elif subtipo_pj == "MEI":
+                    st.warning("📄 **Checklist Documental Obrigatório:**\n- Cartão CNPJ ou Certificado de MEI.\n- CNH do Titular.\n- Comprovante de Residência.\n\n⚠️ **Regra Rígida:** Máximo de 7 dias no boleto.")
+                    if "Boleto" in forma_pagamento: referencias = st.text_area("📞 Referências do MEI (Opcional)")
 
     with st.container(border=True):
         st.markdown("### 2️⃣ Equipamento")
@@ -231,25 +256,24 @@ with abas[0]:
             with ce1: equip_nome = st.text_input("Nome (Manual)")
             with ce2: val_equip = st.number_input("Valor Reposição (R$)", value=3000.0)
         elif equip_sel:
-            st.success(f"💵 Valor Oficial: **R$ {val_equip:,.2f}**")
+            st.success(f"💵 Valor Oficial de Risco: **R$ {val_equip:,.2f}**")
 
     with st.container(border=True):
         st.markdown("### 📎 3️⃣ Documentação Base")
-        documentos = st.file_uploader("Arraste PDFs e Imagens", accept_multiple_files=True)
+        documentos = st.file_uploader("Arraste PDFs, Fotos (CNH, Contrato Social, Serasa)", accept_multiple_files=True)
 
     st.write("<br>", unsafe_allow_html=True)
     if st.button("🚀 INICIAR ANÁLISE DE RISCO", type="primary", use_container_width=True):
         if not nome_cliente or not equip_nome or not documentos:
-            st.error("⚠️ Preencha Cliente, Equipamento e Anexos.")
+            st.error("⚠️ Preencha Cliente, Equipamento e anexe os Documentos listados acima.")
         elif not token_acesso_valido or not gcp_project_id:
             st.error("❌ Erro de Autenticação na Nuvem. Verifique o painel na barra lateral.")
         else:
-            with st.spinner('A IA está processando os documentos com máxima segurança...'):
+            with st.spinner('A IA (Gemini 2.5 Flash) está processando os documentos com máxima segurança...'):
                 try:
                     payload_parts = []
                     for doc in documentos:
                         b64_data = base64.b64encode(doc.getvalue()).decode("utf-8")
-                        # PARÂMETROS CORRETOS VERTEX AI EM CAMELCASE
                         payload_parts.append({
                             "inlineData": {
                                 "mimeType": doc.type,
@@ -257,39 +281,48 @@ with abas[0]:
                             }
                         })
 
+                    # PROMPT MELHORADO PARA GARANTIR LAYOUT E REGRAS DE FRAUDE
                     prompt = f"""
-                    Analista Master de Risco. 
-                    Cliente: {nome_cliente} | Natureza: {tipo_cliente}
-                    Equipamento: {equip_nome} (R$ {val_equip:,.2f})
-                    Condição: {forma_pagamento} | Referências: {referencias if referencias else 'Nenhuma'}
+                    Você é o Analista Master de Risco Financeiro e Fraude da Casa do Construtor.
                     
-                    REGRAS: 
-                    1. PF sempre À vista. 
-                    2. MEI/Condomínio: Boleto máx 7 dias.
-                    3. Empresa < 1 ano: Boleto máx 7 dias. Restrição no setor = REPROVADO.
-                    Formato: Resumo, Status ([APROVADO], [APROVADO COM RESTRIÇÃO], [REPROVADO]), e Parecer.
+                    DADOS DA OPERAÇÃO:
+                    - Cliente: {nome_cliente}
+                    - Natureza: {tipo_cliente} ({subtipo_pj if subtipo_pj else 'Pessoa Física'})
+                    - Solicitante e Contato: {nome_solicitante} | {contato_solicitante}
+                    - Equipamento: {equip_nome} (R$ {val_equip:,.2f})
+                    - Condição Solicitada: {forma_pagamento}
+                    - Referências: {referencias if referencias else 'Nenhuma informada'}
+                    
+                    REGRAS INEGOCIÁVEIS: 
+                    1. Pessoa Física (PF): Somente pagamento À vista.
+                    2. MEI e Condomínio: Boleto máximo 7 dias. Acima disso = REPROVADO (ou aprovado apenas se baixar para 7 dias).
+                    3. Empresa < 1 ano: Boleto máximo 7 dias. Restrição no Serasa no setor da construção = REPROVADO.
+                    
+                    FORMATO OBRIGATÓRIO DE SAÍDA (Use blocos visualmente claros):
+                    
+                    Comece a resposta COM UMA DAS 3 FRASES EXATAS EM LETRAS GIGANTES (Markdown #):
+                    # 🟢 APROVADO
+                    # 🟡 APROVADO COM RESTRIÇÃO
+                    # 🔴 REPROVADO
+                    
+                    Logo abaixo, crie as seguintes seções (usando ** negrito e marcadores):
+                    **Resumo da Decisão:** (Por que tomou essa decisão de forma direta).
+                    
+                    **Justificativa Técnica:** (Detalhe o que encontrou de bom/ruim nos documentos e consultas).
+                    
+                    **⚠️ Alerta Obrigatório Antifraude:** (Instrua o atendente: "Ligue para o telefone fixo registrado no site oficial ou Cartão CNPJ da empresa para confirmar se {nome_solicitante} realmente trabalha lá e tem autorização para locar equipamentos.")
                     """
                     payload_parts.append({"text": prompt})
 
-                    # AQUI ESTÁ A CORREÇÃO: URL APONTANDO RIGOROSAMENTE PARA O NOVO GEMINI 2.5 FLASH!
+                    # MODELO GEMINI 2.5 FLASH VIA VERTEX AI
                     url_api = f"https://us-central1-aiplatform.googleapis.com/v1/projects/{gcp_project_id}/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent"
-                    
                     headers_api = {
                         "Content-Type": "application/json",
                         "Authorization": f"Bearer {token_acesso_valido}"
                     }
-                    
-                    # FORMATO OBRIGATÓRIO DE ARRAY DO VERTEX AI COM ROLE USER
                     data_api = {
-                        "contents": [
-                            {
-                                "role": "user",
-                                "parts": payload_parts
-                            }
-                        ], 
-                        "generationConfig": {
-                            "temperature": 0.1
-                        }
+                        "contents": [{"role": "user", "parts": payload_parts}], 
+                        "generationConfig": {"temperature": 0.1}
                     }
 
                     res = requests.post(url_api, json=data_api, headers=headers_api)
@@ -307,6 +340,61 @@ with abas[0]:
                     st.error(f"Erro na execução da requisição: {e}")
 
     if 'resultado_parecer' in st.session_state and st.session_state['resultado_parecer']:
-        st.success("✅ Avaliação Finalizada com Sucesso!")
-        st.markdown(st.session_state['resultado_parecer'])
-        st.download_button("📄 Baixar Relatório PDF", data=st.session_state['pdf_bytes'], file_name="Relatorio.pdf", mime="application/pdf", type="primary")
+        st.success("✅ Avaliação Finalizada!")
+        
+        # Envelopa o resultado em um visual limpo e grande
+        st.markdown("<hr>", unsafe_allow_html=True)
+        st.markdown(st.session_state['resultado_parecer'], unsafe_allow_html=True)
+        st.markdown("<hr>", unsafe_allow_html=True)
+        
+        st.download_button("📄 Baixar Relatório PDF", data=st.session_state['pdf_bytes'], file_name=f"Parecer_{nome_cliente.replace(' ', '_')}.pdf", mime="application/pdf", type="primary")
+
+
+# --- ABA 2: DASHBOARD GERENCIAL (Aprimorado) ---
+with abas[1]:
+    if eh_master:
+        st.markdown("### 📊 Visão Geral da Rede")
+        if os.path.exists(ARQUIVO_HISTORICO):
+            df = pd.read_csv(ARQUIVO_HISTORICO, sep=";")
+            
+            # Filtro por loja dinâmico
+            lojas_disponiveis = ["Todas as Lojas"] + sorted(list(df['Filial'].dropna().unique()))
+            filtro_loja = st.selectbox("🎯 Filtrar Resultados por Unidade:", lojas_disponiveis)
+            
+            if filtro_loja != "Todas as Lojas":
+                df = df[df['Filial'] == filtro_loja]
+                
+            total_analises = len(df)
+            aprovados = len(df[df['Status Decisão'] == 'APROVADO'])
+            reprovados = len(df[df['Status Decisão'] == 'REPROVADO'])
+            restritos = len(df[df['Status Decisão'] == 'APROVADO COM RESTRIÇÃO'])
+            
+            # Grid de Métricas
+            st.write("<br>", unsafe_allow_html=True)
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("📌 Total de Cadastros", total_analises)
+            col2.metric("✅ Aprovados", aprovados)
+            col3.metric("🔴 Negados", reprovados)
+            col4.metric("🟡 Com Restrição", restritos)
+            
+            st.markdown("---")
+            st.markdown("#### Volume de Operações Recentes")
+            st.bar_chart(df['Data_Dia'].value_counts().sort_index())
+            
+        else:
+            st.info("Aguardando as primeiras análises para gerar o Dashboard...")
+    else:
+        st.markdown("### 📋 Log de Operações da Unidade")
+        if os.path.exists(ARQUIVO_HISTORICO):
+            df = pd.read_csv(ARQUIVO_HISTORICO, sep=";")
+            st.dataframe(df[df['Filial'] == usr_info['filial']], use_container_width=True)
+
+
+# --- ABA 3: HISTÓRICO MASTER ---
+if eh_master and len(abas) > 2:
+    with abas[2]:
+        st.markdown("### 📋 Tabela Geral de Auditoria")
+        if os.path.exists(ARQUIVO_HISTORICO):
+            df = pd.read_csv(ARQUIVO_HISTORICO, sep=";")
+            st.dataframe(df.sort_values(by="Data/Hora", ascending=False), use_container_width=True)
+            st.download_button("📊 Exportar Banco de Dados", df.to_csv(index=False, sep=";").encode('utf-8-sig'), "Auditoria_Risco_CDC.csv", "text/csv")
