@@ -74,16 +74,18 @@ if not st.session_state["logged_in"]:
                         st.error("❌ Credenciais inválidas.")
     st.stop()
 
-# --- AUTENTICAÇÃO VIA CONTA DE SERVIÇO (JSON) ---
+# --- AUTENTICAÇÃO VIA CONTA DE SERVIÇO (VERTEX AI) ---
 token_acesso_valido = None
+gcp_project_id = None
 erro_auth = None
 
 if GOOGLE_AUTH_INSTALLED and "GCP_CREDENTIALS" in st.secrets:
     try:
         creds_json = json.loads(st.secrets["GCP_CREDENTIALS"])
+        gcp_project_id = creds_json.get("project_id")
         
-        # ESCOPO ESPECÍFICO DA API GENERATIVE LANGUAGE (GEMINI)
-        escopos = ['https://www.googleapis.com/auth/generative-language']
+        # ESCOPO OFICIAL DO VERTEX AI / GOOGLE CLOUD PLATFORM
+        escopos = ['https://www.googleapis.com/auth/cloud-platform']
         credenciais = service_account.Credentials.from_service_account_info(creds_json, scopes=escopos)
         
         req_auth = GoogleAuthRequest()
@@ -106,8 +108,8 @@ with st.sidebar:
     st.markdown("🔍 **Status da Conexão AI**")
     if not GOOGLE_AUTH_INSTALLED:
         st.error("🔴 Falta adicionar `google-auth` no requirements.txt do GitHub!")
-    elif token_acesso_valido:
-        st.success("🟢 Conta de Serviço (JSON) Autenticada com Escopo do Gemini!")
+    elif token_acesso_valido and gcp_project_id:
+        st.success(f"🟢 Vertex AI Conectado!\nProjeto: `{gcp_project_id}`")
     else:
         st.error("🔴 JSON de Serviço não configurado nos Secrets.")
         if erro_auth: st.caption(erro_auth)
@@ -217,10 +219,10 @@ with abas[0]:
     if st.button("🚀 INICIAR ANÁLISE DE RISCO", type="primary", use_container_width=True):
         if not nome_cliente or not equip_nome or not documentos:
             st.error("⚠️ Preencha Cliente, Equipamento e Anexos.")
-        elif not token_acesso_valido:
-            st.error("❌ Erro de Autenticação. Verifique o painel verde na barra lateral.")
+        elif not token_acesso_valido or not gcp_project_id:
+            st.error("❌ Erro de Autenticação Vertex AI. Verifique o painel na barra lateral.")
         else:
-            with st.spinner('A IA está processando as matrizes e documentos via Conta de Serviço...'):
+            with st.spinner('A IA está processando as matrizes e documentos via Vertex AI...'):
                 try:
                     payload_parts = []
                     for doc in documentos:
@@ -241,7 +243,8 @@ with abas[0]:
                     """
                     payload_parts.append({"text": prompt})
 
-                    url_api = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+                    # URL OFICIAL VERTEX AI COM PROJECT_ID DINÂMICO
+                    url_api = f"https://us-central1-aiplatform.googleapis.com/v1/projects/{gcp_project_id}/locations/us-central1/publishers/google/models/gemini-1.5-flash:generateContent"
                     headers_api = {
                         "Content-Type": "application/json",
                         "Authorization": f"Bearer {token_acesso_valido}"
@@ -253,7 +256,7 @@ with abas[0]:
                     if res.status_code == 200:
                         texto_resultado = res.json()['candidates'][0]['content']['parts'][0]['text']
                         st.session_state['resultado_parecer'] = texto_resultado
-                        pdf = gerar_pdf_parecer(nome_cliente, tipo_pessoa, forma_pagamento, loja, equip_nome, val_equip, texto_resultado)
+                        pdf = gerar_pdf_parecer(nome_cliente, tipo_cliente, forma_pagamento, loja, equip_nome, val_equip, texto_resultado)
                         st.session_state['pdf_bytes'] = pdf
                         salvar_no_historico(loja, usr_info['nome'], nome_cliente, tipo_cliente, equip_nome, val_equip, forma_pagamento, texto_resultado)
                     else:
