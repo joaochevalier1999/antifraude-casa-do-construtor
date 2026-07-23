@@ -4,10 +4,9 @@ import io
 import html
 import re
 import os
+import requests
 import pandas as pd
 from datetime import datetime
-from google import genai
-from google.genai import types
 
 # Dependências para geração de PDF
 from reportlab.lib.pagesizes import letter
@@ -86,11 +85,14 @@ if not st.session_state["logged_in"]:
     st.stop()
 
 # --- CARREGAMENTO DA CHAVE DA API ---
-chave_ambiente = ""
+chave_padrao = "AQ.Ab8RN6JcB-zrogRbREVozIECvzxs0DJogUUDa_ulomL1S3PeIA"
+
 if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"]:
     chave_ambiente = str(st.secrets["GEMINI_API_KEY"]).strip()
 elif os.getenv("GEMINI_API_KEY"):
     chave_ambiente = str(os.getenv("GEMINI_API_KEY")).strip()
+else:
+    chave_ambiente = chave_padrao
 
 # BARRA LATERAL DE NAVEGAÇÃO
 usr_info = st.session_state["usuario_atual"]
@@ -103,21 +105,14 @@ with st.sidebar:
     st.markdown(f"**📍 Unidade:** {usr_info['filial']}")
     st.markdown("---")
     
-    # Campo manual para teste rápido de API Key
-    st.markdown("🔑 **Configuração da API Key**")
+    st.markdown("🔑 **Chave de API do Gemini**")
     chave_manual = st.text_input(
-        "Chave Gemini (AIzaSy...):",
+        "Chave Ativa:",
         value=chave_ambiente,
-        type="password",
-        help="Obtenha uma chave válida gratuitamente em aistudio.google.com"
+        type="password"
     )
     
     CHAVE_API = chave_manual.strip() if chave_manual else chave_ambiente
-    
-    if CHAVE_API.startswith("AIzaSy"):
-        st.success("🟢 Chave formatada corretamente")
-    else:
-        st.warning("⚠️ Insira uma chave do Google AI Studio (`AIzaSy...`)")
 
     st.markdown("---")
     if st.button("🚪 Sair do Sistema", use_container_width=True):
@@ -198,36 +193,8 @@ RAW_CATALOGO = {
     "ASPIRADOR SH 8000 220V": 2700.0, "ASPIRADOR VC 40L X 220V": 7500.0, "ASPIRADOR VC20 U 220V": 5500.0,
     "BANHEIRO 1.00X1.00X2.50M": 1600.0, "BARRA de LIGACAO 2.05M": 51.0, "BARRA LIGACAO 1.50M": 40.0, "BETONEIRA 200/300L": 3800.0,
     "BETONEIRA 400L INFINITY BIVOLT": 5700.0, "BETONEIRA BTA 400L": 4700.0, "BETONEIRA CS 400L GASOLINA": 5280.0,
-    "BETONEIRA Prof. 250L 220V": 3800.0, "BICO TURBO HD585": 300.0, "BOMBA D'agua BFB 2\" 1500 220V": 1500.0,
-    "BOMBA D'agua BSA 1100 2\" 220V": 1600.0, "BOMBA D'agua LKS 750P 220V": 395.09, "BOMBA D'agua MANGOTE 2\" 5.00M": 3000.0,
-    "BOMBA D'agua MANGUEIRA 3\" 4.00M": 1000.0, "BOMBA D'agua PF1010 1\" 1/2 220V": 640.5, "BOMBA D'agua QDX 3\" 220V": 1239.0,
-    "BOMBA D'agua RS 1100 220V": 2000.0, "BOMBA D'agua SPV1100F 3\" 220V": 2500.0, "BOMBA D'agua TW V1100 3\" 220V": 2500.0,
-    "BOMBA D'agua XP 750 220V": 1300.0, "BOMBA Elet. AIRLESS 1.8HP D3.0X 220V": 5000.0, "BOMBA Elet. AIRLESS MMA370 220V": 2000.0,
-    "BROCA ()": 300.0, "BROCA Hel. 300X800MM": 175.03, "CACAMBA P/GUINCHO 50L": 270.0, "CAMERA TERMICA C2": 5100.0,
-    "CAMERA TERMICA C3 X WIFI": 5600.0, "CARRINHO de MAO de MAO": 200.0, "CARRINHO de MAO FORTE 60LTS": 480.0,
-    "CARRINHO TRANSPORTE CILINDRO GAS": 300.0, "CHAVE ESMERILHADEIRA 4,5\"": 300.0, "CHAVE para MAKITAO": 300.0,
-    "CHAVE SERRA MADEIRA": 300.0, "CHAVE TUPIA": 300.0, "CHAVES (CJO 2) para SERRA MARMORE 4,5\"": 300.0,
-    "CLIMATIZADOR de AR BRYSA MB9000": 4200.0, "COMPACTADOR ate 72KG GASOLINA": 15550.0, "COMPACTADOR SRV550 GASOLINA": 18200.0,
-    "COMPRESSOR AR DIRETO AIR PLUS 2.3 220V": 2000.0, "COMPRESSOR AR DIRETO G3 220V": 500.0, "COMPRESSOR AR DIRETO JET MASTER 110/220V": 600.0,
-    "COMPRESSOR AR DIRETO Prof. 220V": 2000.0, "COMPRESSOR C/RESER 10SS/110L BIVOLT": 4100.0, "COMPRESSOR C/RESER 7.4BPI G2 28L BIVOLT": 850.0,
-    "COMPRESSOR C/RESER CJ7.4/28L 110/220V": 2000.0, "COMPRESSOR C/RESER CSA 8.2/25 PRATIC 220V": 600.0,
-    "COMPRESSOR C/RESER CSI 8.5/25 MONO 220V": 3000.0, "COMPRESSOR C/RESER CSL 10/100 220V": 3000.0,
-    "COMPRESSOR C/RESER MC7.6/21L 2HP 220V": 850.0, "COMPRESSOR C/RESER RCH 200L 220V": 7000.0,
-    "CONDUTOR de ENTULHO BOCA UP171": 270.0, "CONDUTOR de ENTULHO BOCAL UP171": 270.0, "CONDUTOR de ENTULHO DUTO COLETOR AZUL": 189.0,
-    "CONDUTOR de ENTULHO DUTO COLETOR UP171": 252.35, "CONDUTOR de ENTULHO DUTO SIMPLES AZUL": 238.0,
-    "CONDUTOR de ENTULHO DUTO SIMPLES RETO UP170": 250.0, "CONDUTOR de ENTULHO REFORCO": 160.0, "CONDUTOR de ENTULHO SUPORTE METALICO": 169.0,
-    "CONDUTOR de ENTULHO SUPORTE METALICO FIXACAO UP43": 167.0, "CONDUTOR de ENTULHO SUPORTE METALICO LAJE": 82.6,
-    "CONTAINER 2.00X2.10X3.00": 7500.0, "Cort. PISO/PORCELANATO ZAPP1250 220V": 6000.0, "CORTADORA BLOCO SAINT GOBAIN CM 41 220V": 6200.0,
-    "CORTADORA de PAREDE BRIC35 220V": 5600.0, "CORTADORA de PAREDE DCH 300 X 220V": 12000.0, "CORTADORA GRAMA PLM4627N GASOLINA": 4515.0,
-    "CORTADORA PISO BFG 350 GASOLINA": 4700.0, "CORTADORA PISO BFS 130 GASOLINA": 10000.0, "CORTADORA PISO CPV 460 GASOLINA": 12000.0,
-    "CORTADORA PISO FS 400 GASOLINA": 9000.0, "CORTADORA PISO K4000 WET 220V": 5200.0, "CORTADORA PISO K760 GASOLINA": 4800.0,
-    "CORTADORA PISO SAINT GOBAIN C13E GASOLINA": 10000.0, "CORTADORA PORTATIL K4000 WET 220V": 6000.0, "CORTADORA PORTATIL K760 GASOLINA": 12000.0,
-    "DESEMPENADEIRA MDE 220V": 750.0, "DESENTUPIDORA TL 50 BIVOLT": 4176.0, "DETECTOR MATERIAIS DTECT 200": 3500.0,
-    "DETECTOR MATERIAIS DTECT120": 1700.0, "DIAGONAL METALICA 2.12M": 70.0, "DIAGONAL X 2.28M": 80.0, "DISCO CONCRETO/ASFALTO 350 MM": 250.0,
-    "ELEMENTO VERTICAL 0.90X2.00M": 158.86, "ELEMENTO VERTICAL C/ESC. 0.90X2.00M": 220.02, "ENCERADEIRA a 40 220V": 2900.0,
-    "ENCERADEIRA CL400 220V": 2500.0, "ENGATE RAPIDO LAVADORA": 150.0, "ENGATE RAPIDO para LAVADORA": 250.0,
-    "ESCADA ABRIR ALUMINIO 1.50 7D": 505.0, "ESCADA ABRIR FIBRA 4.80X8.40 28D": 1800.0, "ESCADA ABRIR FIBRA 5.00 16D": 2120.0,
-    "ESCORA METALICA de 2.0 a 3.1": 420.0, "ESMERILHADEIRA 4\" 1/2 GWS 850 220V": 550.0, "ESMERILHADEIRA 7\" GWS 26 180 220V": 1000.0,
+    "BETONEIRA Prof. 250L 220V": 3800.0, "BICO TURBO HD585": 300.0, "BOMBA D'agua BFB 2\" 1500 220V": 1500.0, "BOMBA D'agua BSA 1100 2\" 220V": 1600.0,
+    "COMPACTADOR ate 72KG GASOLINA": 15550.0, "COMPRESSOR AR DIRETO AIR PLUS 2.3 220V": 2000.0, "CONTAINER 2.00X2.10X3.00": 7500.0,
     "GERADOR 13KVA BFGE13000 GASOLINA": 8140.0, "GUINCHO de COLUNA 350KG 220V": 5730.0, "LAVADORA AP HD 585 PROFI S 220V": 2600.0,
     "MARTELETE 7.9KG TE700AVR 220V": 6770.0, "PLACA VIBRATORIA REVERSIVEL CR3 GASOLINA": 24500.0, "ROMPEDOR 29.9KG TE3000 AVR 220V": 23980.0
 }
@@ -308,22 +275,21 @@ with abas[0]:
     if st.button("🚀 INICIAR ANÁLISE DE RISCO", type="primary", use_container_width=True):
         if not nome_cliente or not equip_nome or not documentos:
             st.error("⚠️ Por favor, preencha as 3 etapas (Cliente, Equipamento e Anexos) antes de iniciar.")
-        elif not CHAVE_API or len(CHAVE_API) < 10:
-            st.error("❌ Por favor, informe uma API Key do Gemini na barra lateral para prosseguir.")
+        elif not CHAVE_API or len(CHAVE_API) < 5:
+            st.error("❌ Por favor, informe a API Key na barra lateral para prosseguir.")
         else:
             with st.spinner('A IA está processando as matrizes de risco, lendo documentos e cruzando bases...'):
                 try:
-                    # Instancia o cliente com a chave fornecida na tela ou nos segredos
-                    client = genai.Client(api_key=CHAVE_API)
-                    
-                    payload = []
+                    # Monta o payload das partes (documentos em Base64)
+                    payload_parts = []
                     for doc in documentos:
-                        payload.append(
-                            types.Part.from_bytes(
-                                data=doc.getvalue(),
-                                mime_type=doc.type
-                            )
-                        )
+                        b64_data = base64.b64encode(doc.getvalue()).decode("utf-8")
+                        payload_parts.append({
+                            "inline_data": {
+                                "mime_type": doc.type,
+                                "data": b64_data
+                            }
+                        })
 
                     prompt = f"""
                     Você é o Analista Master de Risco Financeiro e Fraude da Casa do Construtor.
@@ -367,24 +333,41 @@ with abas[0]:
                     - Destaque: Para Pessoa Física lembre expressamente que o pagamento é À Vista.
                     """
 
-                    payload.append(prompt)
+                    payload_parts.append({"text": prompt})
 
-                    response = client.models.generate_content(
-                        model='gemini-2.5-flash',
-                        contents=payload
-                    )
+                    # Chamada HTTP direta com a chave x-goog-api-key (Sem dependências do SDK)
+                    url_api = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+                    headers_api = {
+                        "Content-Type": "application/json",
+                        "x-goog-api-key": CHAVE_API
+                    }
+                    data_api = {
+                        "contents": [{
+                            "parts": payload_parts
+                        }],
+                        "generationConfig": {
+                            "temperature": 0.1
+                        }
+                    }
 
-                    texto_resultado = response.text
-                    st.session_state['resultado_parecer'] = texto_resultado
-                    st.session_state['nome_cliente_analisado'] = nome_cliente
-                    
-                    pdf = gerar_pdf_parecer(nome_cliente, tipo_cliente, forma_pagamento, loja, equip_nome, val_equip, texto_resultado)
-                    st.session_state['pdf_bytes'] = pdf
+                    res = requests.post(url_api, json=data_api, headers=headers_api)
 
-                    salvar_no_historico(loja, usr_info['nome'], nome_cliente, tipo_cliente, equip_nome, val_equip, forma_pagamento, texto_resultado)
+                    if res.status_code == 200:
+                        res_json = res.json()
+                        texto_resultado = res_json['candidates'][0]['content']['parts'][0]['text']
+                        
+                        st.session_state['resultado_parecer'] = texto_resultado
+                        st.session_state['nome_cliente_analisado'] = nome_cliente
+                        
+                        pdf = gerar_pdf_parecer(nome_cliente, tipo_cliente, forma_pagamento, loja, equip_nome, val_equip, texto_resultado)
+                        st.session_state['pdf_bytes'] = pdf
+
+                        salvar_no_historico(loja, usr_info['nome'], nome_cliente, tipo_cliente, equip_nome, val_equip, forma_pagamento, texto_resultado)
+                    else:
+                        st.error(f"❌ Erro de Autenticação/API (Código {res.status_code}): {res.text}")
 
                 except Exception as e:
-                    st.error(f"Erro na comunicação com a API: {e}")
+                    st.error(f"Erro na execução da análise: {e}")
 
     if 'resultado_parecer' in st.session_state and st.session_state['resultado_parecer']:
         st.success("✅ Avaliação Finalizada!")
