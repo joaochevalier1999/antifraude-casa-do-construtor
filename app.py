@@ -84,14 +84,17 @@ if not st.session_state["logged_in"]:
                         st.error("❌ Credenciais inválidas. Tente novamente.")
     st.stop()
 
-# --- CARREGAMENTO SEGURO DA CHAVE (AQ...) ---
-CHAVE_API = ""
-if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"]:
-    CHAVE_API = str(st.secrets["GEMINI_API_KEY"]).strip().strip('"').strip("'")
+# --- LEITURA LIMPA DA CHAVE ---
+chave_bruta = ""
+if "GEMINI_API_KEY" in st.secrets:
+    chave_bruta = str(st.secrets["GEMINI_API_KEY"])
 elif os.getenv("GEMINI_API_KEY"):
-    CHAVE_API = str(os.getenv("GEMINI_API_KEY")).strip().strip('"').strip("'")
+    chave_bruta = str(os.getenv("GEMINI_API_KEY"))
 
-# BARRA LATERAL DE NAVEGAÇÃO
+# Limpeza de caracteres especiais
+CHAVE_API = chave_bruta.strip().replace('"', '').replace("'", '').replace('\n', '').replace('\r', '')
+
+# BARRA LATERAL
 usr_info = st.session_state["usuario_atual"]
 eh_master = usr_info["perfil"] == "master"
 
@@ -102,13 +105,19 @@ with st.sidebar:
     st.markdown(f"**📍 Unidade:** {usr_info['filial']}")
     st.markdown("---")
     
+    # PAINEL DE DIAGNÓSTICO
+    st.markdown("🔍 **Diagnóstico da Chave Ativa**")
     if CHAVE_API:
-        st.success("🟢 API Key Conectada com Sucesso")
+        inicio = CHAVE_API[:6]
+        fim = CHAVE_API[-4:] if len(CHAVE_API) > 10 else ""
+        tam = len(CHAVE_API)
+        st.success(f"Carregada: `{inicio}...{fim}` ({tam} caracteres)")
     else:
-        st.warning("⚠️ Nenhuma chave encontrada nos Secrets")
-        chave_manual = st.text_input("Cole sua chave (AQ...) aqui:", type="password")
-        if chave_manual.strip():
-            CHAVE_API = chave_manual.strip()
+        st.error("Nenhuma chave encontrada em Secrets!")
+    
+    chave_manual_input = st.text_input("Substituir chave manualmente:", type="password")
+    if chave_manual_input.strip():
+        CHAVE_API = chave_manual_input.strip().replace('"', '').replace("'", '').replace('\n', '').replace('\r', '')
 
     st.markdown("---")
     if st.button("🚪 Sair do Sistema", use_container_width=True):
@@ -174,25 +183,12 @@ def gerar_pdf_parecer(nome_cliente, tipo_pessoa, prazo, loja, equipamento_nome, 
     buffer.seek(0)
     return buffer.getvalue()
 
-# --- CATÁLOGO COMPLETO DE EQUIPAMENTOS ---
+# --- CATÁLOGO DE EQUIPAMENTOS ---
 RAW_CATALOGO = {
     "ACABADORA PA ACABAMENTO 36\"": 200.0, "ACABADORA ACV 36\" GASOLINA": 14000.0, "ACABADORA BFG 100 GASOLINA": 13500.0,
     "ACABADORA BUFFALO BFG 100 GASOLINA": 13500.0, "ACABADORA CSM AC36 GASOLINA": 11900.0, "ACABADORA CT36 5A GASOLINA": 14000.0,
-    "ACABADORA CT36 5A GASOLINA (KIT PAS)": 300.0, "ACABADORA FINITI F36 GASOLINA": 10000.0, "ACABADORA HUSQVARNA BG375 GASOLINA": 13500.0,
-    "ACABADORA MAC 36 GASOLINA": 13500.0, "ACABADORA MENEGOTTI MAC 36 GASOLINA": 13500.0, "ACABADORA MENEGOTTI TOL100 GASOLINA": 13500.0,
-    "ACABADORA VIBROMAK ACV 36\" GASOLINA": 14000.0, "ACABADORA WACKER CT36-5A GASOLINA": 14000.0, "ACABADORA WACKER CT36-5A GASOLINA (KIT PAS)": 300.0,
-    "APARADOR DUC353Z BATERIA": 2824.5, "APARADOR HUSQVARNA 122 HD60 GASOLINA": 1380.0, "APARADOR MAKITA DUC353Z BATERIA": 2824.5,
-    "APARADOR MAKITA EH6000WG GASOLINA": 2721.02, "ASPIRADOR AL320 220V": 15000.0, "ASPIRADOR ARTLAV AL320 220V": 15000.0,
-    "ASPIRADOR BOSCH GAS15PS 220V": 1900.0, "ASPIRADOR DEWALT DWV010 220V": 3200.0, "ASPIRADOR ELETROLUX GT3000 PRO 220V": 400.0,
-    "ASPIRADOR HIDROPO 2KW 70L": 2000.0, "ASPIRADOR HILTI VC 40L-X 220V": 7500.0, "ASPIRADOR HILTI VC20-U 220V": 5500.0,
-    "ASPIRADOR NT30/1 ME CLASSIC 220V": 2300.0, "ASPIRADOR NT65/2 ECO 220V": 4700.0, "ASPIRADOR NT90/2 220V": 3600.0,
-    "ASPIRADOR SH 8000 220V": 2700.0, "ASPIRADOR VC 40L X 220V": 7500.0, "ASPIRADOR VC20 U 220V": 5500.0,
-    "BANHEIRO 1.00X1.00X2.50M": 1600.0, "BARRA de LIGACAO 2.05M": 51.0, "BARRA LIGACAO 1.50M": 40.0, "BETONEIRA 200/300L": 3800.0,
-    "BETONEIRA 400L INFINITY BIVOLT": 5700.0, "BETONEIRA BTA 400L": 4700.0, "BETONEIRA CS 400L GASOLINA": 5280.0,
-    "BETONEIRA Prof. 250L 220V": 3800.0, "BICO TURBO HD585": 300.0, "BOMBA D'agua BFB 2\" 1500 220V": 1500.0, "BOMBA D'agua BSA 1100 2\" 220V": 1600.0,
-    "COMPACTADOR ate 72KG GASOLINA": 15550.0, "COMPRESSOR AR DIRETO AIR PLUS 2.3 220V": 2000.0, "CONTAINER 2.00X2.10X3.00": 7500.0,
-    "GERADOR 13KVA BFGE13000 GASOLINA": 8140.0, "GUINCHO de COLUNA 350KG 220V": 5730.0, "LAVADORA AP HD 585 PROFI S 220V": 2600.0,
-    "MARTELETE 7.9KG TE700AVR 220V": 6770.0, "PLACA VIBRATORIA REVERSIVEL CR3 GASOLINA": 24500.0, "ROMPEDOR 29.9KG TE3000 AVR 220V": 23980.0
+    "BETONEIRA 400L INFINITY BIVOLT": 5700.0, "COMPACTADOR ate 72KG GASOLINA": 15550.0, "GERADOR 13KVA BFGE13000 GASOLINA": 8140.0,
+    "GUINCHO de COLUNA 350KG 220V": 5730.0, "LAVADORA AP HD 585 PROFI S 220V": 2600.0, "ROMPEDOR 29.9KG TE3000 AVR 220V": 23980.0
 }
 
 CATALOGO_EQUIPAMENTOS = {" ".join(k.split()): v for k, v in RAW_CATALOGO.items()}
@@ -232,13 +228,6 @@ with abas[0]:
                     nome_solicitante = st.text_input("Quem está solicitando no balcão/WhatsApp?" if subtipo_pj != "Condomínio" else "Nome do Síndico Responsável")
                 with col_pj2:
                     contato_solicitante = st.text_input("E-mail corporativo ou WhatsApp")
-                
-                if subtipo_pj == "Empresa Padrão (LTDA/SA)":
-                    st.info("📌 **Documentação:** Contrato Social + Doc do Sócio + Relatório Serasa.")
-                elif subtipo_pj == "Condomínio":
-                    st.warning("🏢 **Regra:** Ata de Eleição + Doc do Síndico (assinatura obrigatória).")
-                elif subtipo_pj == "MEI":
-                    st.info("🏪 **Regra MEI:** Cartão CNPJ/CCMEI + Doc Titular + Comprovante de Endereço + Serasa.")
 
         with col_a2:
             referencias = ""
@@ -248,7 +237,7 @@ with abas[0]:
             else:
                 forma_pagamento = st.selectbox("💳 Condição de Pagamento Solicitada", ["À Vista / Débito / Pix", "Boleto 7 dias", "Boleto 14 dias", "Boleto 21 dias", "Boleto 28 dias"])
                 if "Boleto" in forma_pagamento:
-                    referencias = st.text_area("📞 Feedback das Referências Comerciais", placeholder="Descreva aqui o que as empresas consultadas falaram sobre os hábitos de pagamento deste CNPJ...")
+                    referencias = st.text_area("📞 Feedback das Referências Comerciais", placeholder="Descreva o histórico de pagamento do CNPJ...")
 
     with st.container(border=True):
         st.markdown("### 2️⃣ Equipamento")
@@ -271,10 +260,10 @@ with abas[0]:
     if st.button("🚀 INICIAR ANÁLISE DE RISCO", type="primary", use_container_width=True):
         if not nome_cliente or not equip_nome or not documentos:
             st.error("⚠️ Por favor, preencha as 3 etapas (Cliente, Equipamento e Anexos) antes de iniciar.")
-        elif not CHAVE_API or len(CHAVE_API) < 5:
-            st.error("❌ Por favor, configure a chave de API nos Secrets do Streamlit ou na barra lateral para continuar.")
+        elif not CHAVE_API:
+            st.error("❌ Nenhuma chave configurada.")
         else:
-            with st.spinner('A IA está processando as matrizes de risco, lendo documentos e cruzando bases...'):
+            with st.spinner('A IA está processando as matrizes de risco e lendo os documentos...'):
                 try:
                     payload_parts = []
                     for doc in documentos:
@@ -297,40 +286,20 @@ with abas[0]:
                     - Condição Solicitada: {forma_pagamento}
                     - Referências: {referencias if referencias else 'Nenhuma informada'}
 
-                    =========================================
-                    📜 MATRIZ ESTRITA DE POLÍTICA DE CRÉDITO
-                    =========================================
-                    Siga RIGOROSAMENTE estas regras para aprovar, rebaixar prazo ou reprovar o cadastro:
-
-                    REGRA 1 - PESSOA FÍSICA (PF):
-                    - Pagamento deve ser estritamente À Vista / Antecipado. Destaque essa regra no seu parecer.
-
-                    REGRA 2 - PESSOA JURÍDICA (MEI e CONDOMÍNIOS):
-                    - Condomínios: Prazo máximo permitido é 7 dias (boleto). O Síndico atual DEVE assinar o contrato (veja na Ata).
-                    - MEI: Prazo máximo permitido é 7 dias. Não conceda prazos maiores sob nenhuma hipótese.
-
-                    REGRA 3 - PESSOA JURÍDICA (Empresa Padrão LTDA/SA):
-                    A aprovação de boletos DEPENDE dos dados extraídos do Serasa e Referências:
-                    A) Idade da Empresa: Se a empresa tem menos de 1 ano de abertura, O PRAZO MÁXIMO DEVE SER CORTADO PARA 7 DIAS.
-                    B) Referências Comerciais: Se as referências forem ausentes, o prazo DEVE SER REDUZIDO para À Vista ou 7 dias.
-                    C) Restrições SPC/Serasa: 
-                       - Protestos ou dívidas VINCULADOS AO SETOR DA CONSTRUÇÃO/LOCAÇÃO: [REPROVADO] (Alto risco de perda do equipamento).
-                       - Dívidas em outros setores > R$ 1.000: [APROVADO COM RESTRIÇÃO], cortando o pagamento SOMENTE PARA À VISTA.
-                       - Ficha Totalmente Limpa + Boas Referências: Você pode [APROVAR] o prazo solicitado.
-
-                    DIRETRIZES DE FRAUDE (TERCEIROS NA PJ):
-                    - Analise se a pessoa que pediu ({nome_solicitante}) tem o e-mail oficial da empresa ou consta no quadro societário (Contrato Social). Se for um terceiro desconhecido, emita um ALERTA VERMELHO exigindo "Pedido de Compra Oficial e Autorização".
-
+                    MATRIZ DE RISCO:
+                    1. PF: Pagamento estritamente À Vista.
+                    2. MEI/Condomínio: Boleto máximo 7 dias.
+                    3. Empresa LTDA/SA: Menos de 1 ano = máx 7 dias. Restrições na construção/locação = REPROVADO.
+                    
                     FORMATO DA RESPOSTA:
-                    - Status: [APROVADO], [APROVADO COM RESTRIÇÃO (ex: Prazo reduzido)] ou [REPROVADO].
-                    - Quadro Resumo do Crédito (Tempo de Abertura, Situação Serasa, Resumo Referências).
-                    - Parecer Detalhado (Por que aprovou? Por que reduziu o prazo? Por que bloqueou?).
-                    - Destaque: Para Pessoa Física lembre expressamente que o pagamento é À Vista.
+                    - Status: [APROVADO], [APROVADO COM RESTRIÇÃO] ou [REPROVADO].
+                    - Quadro Resumo do Crédito.
+                    - Parecer Detalhado.
                     """
 
                     payload_parts.append({"text": prompt})
 
-                    # ENVIO CORRETO VIA CABEÇALHO HTTP (NUNCA NA URL)
+                    # Chamada HTTP REST
                     url_api = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
                     headers_api = {
                         "Content-Type": "application/json",
@@ -362,7 +331,7 @@ with abas[0]:
                         st.error(f"❌ Erro na API (Código {res.status_code}): {res.text}")
 
                 except Exception as e:
-                    st.error(f"Erro na execução da análise: {e}")
+                    st.error(f"Erro na execução: {e}")
 
     if 'resultado_parecer' in st.session_state and st.session_state['resultado_parecer']:
         st.success("✅ Avaliação Finalizada!")
