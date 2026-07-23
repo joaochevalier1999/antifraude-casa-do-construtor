@@ -243,14 +243,16 @@ with abas[0]:
                     """
                     payload_parts.append({"text": prompt})
 
-                    # URL OFICIAL VERTEX AI COM PROJECT_ID DINÂMICO
-                    url_api = f"https://us-central1-aiplatform.googleapis.com/v1/projects/{gcp_project_id}/locations/us-central1/publishers/google/models/gemini-1.5-flash:generateContent"
+                    # URL VERTEX AI COM O NOME OFICIAL DA VERSÃO
+                    url_api = f"https://us-central1-aiplatform.googleapis.com/v1/projects/{gcp_project_id}/locations/us-central1/publishers/google/models/gemini-1.5-flash-001:generateContent"
+                    
                     headers_api = {
                         "Content-Type": "application/json",
                         "Authorization": f"Bearer {token_acesso_valido}"
                     }
                     data_api = {"contents": [{"parts": payload_parts}], "generationConfig": {"temperature": 0.1}}
 
+                    # Chamada corrigida
                     res = requests.post(url_api, json=data_api, headers=headers_api)
 
                     if res.status_code == 200:
