@@ -85,12 +85,11 @@ if not st.session_state["logged_in"]:
                         st.error("❌ Credenciais inválidas. Tente novamente.")
     st.stop()
 
-# --- CARREGAMENTO DA CHAVE DA API ---
-# Tenta obter via Secrets do Streamlit ou Variáveis de Ambiente, usando a chave padrão como fallback
+# --- CARREGAMENTO E DIAGNÓSTICO DA CHAVE DA API ---
 if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"]:
-    CHAVE_API = st.secrets["GEMINI_API_KEY"]
+    CHAVE_API = str(st.secrets["GEMINI_API_KEY"]).strip()
 elif os.getenv("GEMINI_API_KEY"):
-    CHAVE_API = os.getenv("GEMINI_API_KEY")
+    CHAVE_API = str(os.getenv("GEMINI_API_KEY")).strip()
 else:
     CHAVE_API = "AQ.Ab8RN6LJtRqJbejd1BORxjjCjfTb0iKyqEHCi8qQjMBwbRW8dA"
 
@@ -101,7 +100,6 @@ def obter_cliente_genai(api_key: str):
 try:
     client = obter_cliente_genai(CHAVE_API)
 except Exception as e:
-    st.error(f"Erro ao inicializar o cliente da API do Gemini: {e}")
     client = None
 
 ARQUIVO_HISTORICO = "historico_analises.csv"
@@ -220,18 +218,26 @@ opcoes_equipamentos = sorted(list(CATALOGO_EQUIPAMENTOS.keys())) + [OPCAO_OUTRO]
 usr_info = st.session_state["usuario_atual"]
 eh_master = usr_info["perfil"] == "master"
 
-# BARRA LATERAL DE NAVEGAÇÃO
+# BARRA LATERAL DE NAVEGAÇÃO E PAINEL DE DIAGNÓSTICO
 with st.sidebar:
     st.image("https://casadoconstrutor.com.br/wp-content/uploads/2021/04/logo-casa-do-construtor.png", width=180)
     st.markdown("---")
     st.markdown(f"### 👤 {usr_info['nome']}")
     st.markdown(f"**📍 Unidade:** {usr_info['filial']}")
     st.markdown("---")
+    
+    # PAINEL DE DIAGNÓSTICO DE CHAVE (VISÍVEL NO PAINEL LATERAL)
+    if CHAVE_API.startswith("AIzaSy"):
+        st.success("🟢 API Key Válida (`AIza...`)")
+    else:
+        st.error("🔴 API Key Inválida ou Fallback")
+        st.caption(f"Chave lida: `{CHAVE_API[:8]}...`")
+        st.caption("Cadastre a chave oficial (`AIzaSy...`) do Google AI Studio nos Secrets do Streamlit.")
+
+    st.markdown("---")
     if st.button("🚪 Sair do Sistema", use_container_width=True):
         st.session_state["logged_in"] = False
         st.rerun()
-    st.markdown("<br><br><br><br><br><br>", unsafe_allow_html=True)
-    st.caption("Powered by Google Gemini AI")
 
 # ÁREA CENTRAL
 st.title("🛡️ Central de Risco e Crédito")
@@ -305,14 +311,13 @@ with abas[0]:
     if st.button("🚀 INICIAR ANÁLISE DE RISCO", type="primary", use_container_width=True):
         if not nome_cliente or not equip_nome or not documentos:
             st.error("⚠️ Por favor, preencha as 3 etapas (Cliente, Equipamento e Anexos) antes de iniciar.")
-        elif client is None:
-            st.error("❌ O cliente da API não pôde ser instanciado.")
+        elif not CHAVE_API.startswith("AIzaSy"):
+            st.error("❌ A chave cadastrada no sistema não inicia com 'AIzaSy'. Acesse o Google AI Studio para gerar uma chave Válida.")
         else:
             with st.spinner('A IA está processando as matrizes de risco, lendo documentos e cruzando bases...'):
                 try:
                     payload = []
                     
-                    # Converte os arquivos anexados utilizando o SDK oficial da Google
                     for doc in documentos:
                         payload.append(
                             types.Part.from_bytes(
@@ -365,7 +370,6 @@ with abas[0]:
 
                     payload.append(prompt)
 
-                    # Execução nativa via API Key com o modelo oficial de produção
                     response = client.models.generate_content(
                         model='gemini-2.5-flash',
                         contents=payload
