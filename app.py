@@ -85,19 +85,17 @@ if not st.session_state["logged_in"]:
                         st.error("❌ Credenciais inválidas. Tente novamente.")
     st.stop()
 
-# --- AUTENTICAÇÃO COM A API DO GEMINI ---
-# Obtém a chave de API cadastrada nos Secrets do Streamlit ou nas Variáveis de Ambiente
+# --- CARREGAMENTO DA CHAVE DA API ---
+# Tenta obter via Secrets do Streamlit ou Variáveis de Ambiente, usando a chave padrão como fallback
 if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"]:
     CHAVE_API = st.secrets["GEMINI_API_KEY"]
 elif os.getenv("GEMINI_API_KEY"):
     CHAVE_API = os.getenv("GEMINI_API_KEY")
 else:
-    st.error("⚠️ Nenhuma Chave de API configurada! Cadastre a GEMINI_API_KEY nos Secrets do Streamlit.")
-    st.stop()
+    CHAVE_API = "AQ.Ab8RN6LJtRqJbejd1BORxjjCjfTb0iKyqEHCi8qQjMBwbRW8dA"
 
 @st.cache_resource
 def obter_cliente_genai(api_key: str):
-    # Instancia o cliente oficial com a Chave de API
     return genai.Client(api_key=api_key)
 
 try:
@@ -308,7 +306,7 @@ with abas[0]:
         if not nome_cliente or not equip_nome or not documentos:
             st.error("⚠️ Por favor, preencha as 3 etapas (Cliente, Equipamento e Anexos) antes de iniciar.")
         elif client is None:
-            st.error("❌ O cliente da API não pôde ser instanciado. Verifique a chave GEMINI_API_KEY.")
+            st.error("❌ O cliente da API não pôde ser instanciado.")
         else:
             with st.spinner('A IA está processando as matrizes de risco, lendo documentos e cruzando bases...'):
                 try:
