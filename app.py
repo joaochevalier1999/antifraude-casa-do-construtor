@@ -18,19 +18,15 @@ from reportlab.lib import colors
 # --- CONFIGURAÇÃO DA PÁGINA E CSS CUSTOMIZADO ---
 st.set_page_config(page_title="Portal Antifraude - Casa do Construtor", page_icon="🏗️", layout="wide", initial_sidebar_state="expanded")
 
-# CSS para injetar a identidade visual da Casa do Construtor
 st.markdown("""
     <style>
-    /* Fundo da tela inteira */
     .stApp {
         background-color: #F4F6F9;
     }
-    /* Títulos na cor Azul Marinho */
     h1, h2, h3 {
         color: #003366 !important;
         font-family: 'Arial', sans-serif;
     }
-    /* Estilização do Botão Primário (Azul Marinho com Hover Amarelo) */
     div.stButton > button[kind="primary"] {
         background-color: #003366;
         color: #FFFFFF;
@@ -45,7 +41,6 @@ st.markdown("""
         color: #003366;
         border: 2px solid #FBC02D;
     }
-    /* Efeito de Card nas caixas de contêiner */
     div[data-testid="stVerticalBlock"] > div[style*="border"] {
         border-radius: 12px;
         background-color: #FFFFFF;
@@ -53,7 +48,6 @@ st.markdown("""
         border: 1px solid #E0E0E0;
         padding: 15px;
     }
-    /* Ocultar marca do Streamlit */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     </style>
@@ -81,7 +75,7 @@ if "logged_in" not in st.session_state:
 if "usuario_atual" not in st.session_state:
     st.session_state["usuario_atual"] = None
 
-# --- TELA DE LOGIN (Estilo Portal) ---
+# --- TELA DE LOGIN ---
 if not st.session_state["logged_in"]:
     st.write("<br><br><br>", unsafe_allow_html=True)
     col_l1, col_l2, col_l3 = st.columns([1, 1.5, 1])
@@ -678,9 +672,15 @@ with abas[0]:
             with st.spinner('A IA está processando as matrizes de risco, lendo documentos e cruzando bases...'):
                 try:
                     payload = []
+                    
+                    # Converte cada arquivo para o formato aceito pelo SDK do Gemini
                     for doc in documentos:
-                        b64 = base64.b64encode(doc.getvalue()).decode("utf-8")
-                        payload.append({"type": "document" if "pdf" in doc.type else "image", "mime_type": doc.type, "data": b64})
+                        payload.append(
+                            types.Part.from_bytes(
+                                data=doc.getvalue(),
+                                mime_type=doc.type
+                            )
+                        )
 
                     prompt = f"""
                     Você é o Analista Master de Risco Financeiro e Fraude da Casa do Construtor.
@@ -724,7 +724,7 @@ with abas[0]:
                     - Destaque: Para Pessoa Física lembre expressamente que o pagamento é À Vista.
                     """
 
-                    payload.append({"type": "text", "text": prompt})
+                    payload.append(prompt)
 
                     interaction = client.models.generate_content(
                         model='gemini-2.5-flash',
