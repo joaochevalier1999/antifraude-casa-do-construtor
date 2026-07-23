@@ -85,11 +85,11 @@ if not st.session_state["logged_in"]:
     st.stop()
 
 # --- CARREGAMENTO SEGURO DA CHAVE DA API ---
-chave_ambiente = ""
+CHAVE_API = ""
 if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"]:
-    chave_ambiente = str(st.secrets["GEMINI_API_KEY"]).strip()
+    CHAVE_API = str(st.secrets["GEMINI_API_KEY"]).strip()
 elif os.getenv("GEMINI_API_KEY"):
-    chave_ambiente = str(os.getenv("GEMINI_API_KEY")).strip()
+    CHAVE_API = str(os.getenv("GEMINI_API_KEY")).strip()
 
 # BARRA LATERAL DE NAVEGAÇÃO
 usr_info = st.session_state["usuario_atual"]
@@ -102,15 +102,13 @@ with st.sidebar:
     st.markdown(f"**📍 Unidade:** {usr_info['filial']}")
     st.markdown("---")
     
-    st.markdown("🔑 **Configuração da API Key**")
-    chave_manual = st.text_input(
-        "Sua Chave do Gemini:",
-        value=chave_ambiente,
-        type="password",
-        placeholder="Informe a chave aqui se necessário"
-    )
-    
-    CHAVE_API = chave_manual.strip() if chave_manual else chave_ambiente
+    if CHAVE_API:
+        st.success("🟢 API Key Conectada")
+    else:
+        st.warning("⚠️ Chave não configurada no Secrets")
+        chave_manual = st.text_input("Cole sua chave aqui se necessário:", type="password")
+        if chave_manual.strip():
+            CHAVE_API = chave_manual.strip()
 
     st.markdown("---")
     if st.button("🚪 Sair do Sistema", use_container_width=True):
@@ -274,7 +272,7 @@ with abas[0]:
         if not nome_cliente or not equip_nome or not documentos:
             st.error("⚠️ Por favor, preencha as 3 etapas (Cliente, Equipamento e Anexos) antes de iniciar.")
         elif not CHAVE_API or len(CHAVE_API) < 5:
-            st.error("❌ Por favor, informe a Chave da API no campo da barra lateral para prosseguir.")
+            st.error("❌ Por favor, configure a chave de API nos Secrets do Streamlit ou na barra lateral para continuar.")
         else:
             with st.spinner('A IA está processando as matrizes de risco, lendo documentos e cruzando bases...'):
                 try:
@@ -332,7 +330,6 @@ with abas[0]:
 
                     payload_parts.append({"text": prompt})
 
-                    # ENDPOINT COM O MODELO ESTÁVEL E OFICIAL (gemini-1.5-flash)
                     url_api = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
                     headers_api = {
                         "Content-Type": "application/json",
@@ -356,7 +353,7 @@ with abas[0]:
                         st.session_state['resultado_parecer'] = texto_resultado
                         st.session_state['nome_cliente_analisado'] = nome_cliente
                         
-                        pdf = gerar_pdf_parecer(nome_cliente, tipo_pessoa, forma_pagamento, loja, equip_nome, val_equip, texto_resultado)
+                        pdf = gerar_pdf_parecer(nome_cliente, tipo_cliente, forma_pagamento, loja, equip_nome, val_equip, texto_resultado)
                         st.session_state['pdf_bytes'] = pdf
 
                         salvar_no_historico(loja, usr_info['nome'], nome_cliente, tipo_cliente, equip_nome, val_equip, forma_pagamento, texto_resultado)
