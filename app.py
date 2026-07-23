@@ -85,22 +85,44 @@ if not st.session_state["logged_in"]:
                         st.error("❌ Credenciais inválidas. Tente novamente.")
     st.stop()
 
-# --- CARREGAMENTO E DIAGNÓSTICO DA CHAVE DA API ---
+# --- CARREGAMENTO DA CHAVE DA API ---
+chave_ambiente = ""
 if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"]:
-    CHAVE_API = str(st.secrets["GEMINI_API_KEY"]).strip()
+    chave_ambiente = str(st.secrets["GEMINI_API_KEY"]).strip()
 elif os.getenv("GEMINI_API_KEY"):
-    CHAVE_API = str(os.getenv("GEMINI_API_KEY")).strip()
-else:
-    CHAVE_API = "AQ.Ab8RN6LJtRqJbejd1BORxjjCjfTb0iKyqEHCi8qQjMBwbRW8dA"
+    chave_ambiente = str(os.getenv("GEMINI_API_KEY")).strip()
 
-@st.cache_resource
-def obter_cliente_genai(api_key: str):
-    return genai.Client(api_key=api_key)
+# BARRA LATERAL DE NAVEGAÇÃO
+usr_info = st.session_state["usuario_atual"]
+eh_master = usr_info["perfil"] == "master"
 
-try:
-    client = obter_cliente_genai(CHAVE_API)
-except Exception as e:
-    client = None
+with st.sidebar:
+    st.image("https://casadoconstrutor.com.br/wp-content/uploads/2021/04/logo-casa-do-construtor.png", width=180)
+    st.markdown("---")
+    st.markdown(f"### 👤 {usr_info['nome']}")
+    st.markdown(f"**📍 Unidade:** {usr_info['filial']}")
+    st.markdown("---")
+    
+    # Campo manual para teste rápido de API Key
+    st.markdown("🔑 **Configuração da API Key**")
+    chave_manual = st.text_input(
+        "Chave Gemini (AIzaSy...):",
+        value=chave_ambiente,
+        type="password",
+        help="Obtenha uma chave válida gratuitamente em aistudio.google.com"
+    )
+    
+    CHAVE_API = chave_manual.strip() if chave_manual else chave_ambiente
+    
+    if CHAVE_API.startswith("AIzaSy"):
+        st.success("🟢 Chave formatada corretamente")
+    else:
+        st.warning("⚠️ Insira uma chave do Google AI Studio (`AIzaSy...`)")
+
+    st.markdown("---")
+    if st.button("🚪 Sair do Sistema", use_container_width=True):
+        st.session_state["logged_in"] = False
+        st.rerun()
 
 ARQUIVO_HISTORICO = "historico_analises.csv"
 
@@ -214,31 +236,6 @@ CATALOGO_EQUIPAMENTOS = {" ".join(k.split()): v for k, v in RAW_CATALOGO.items()
 OPCAO_OUTRO = "➕ OUTRO EQUIPAMENTO (Manual)"
 opcoes_equipamentos = sorted(list(CATALOGO_EQUIPAMENTOS.keys())) + [OPCAO_OUTRO]
 
-# --- UI PRINCIPAL (PORTAL) ---
-usr_info = st.session_state["usuario_atual"]
-eh_master = usr_info["perfil"] == "master"
-
-# BARRA LATERAL DE NAVEGAÇÃO E PAINEL DE DIAGNÓSTICO
-with st.sidebar:
-    st.image("https://casadoconstrutor.com.br/wp-content/uploads/2021/04/logo-casa-do-construtor.png", width=180)
-    st.markdown("---")
-    st.markdown(f"### 👤 {usr_info['nome']}")
-    st.markdown(f"**📍 Unidade:** {usr_info['filial']}")
-    st.markdown("---")
-    
-    # PAINEL DE DIAGNÓSTICO DE CHAVE (VISÍVEL NO PAINEL LATERAL)
-    if CHAVE_API.startswith("AIzaSy"):
-        st.success("🟢 API Key Válida (`AIza...`)")
-    else:
-        st.error("🔴 API Key Inválida ou Fallback")
-        st.caption(f"Chave lida: `{CHAVE_API[:8]}...`")
-        st.caption("Cadastre a chave oficial (`AIzaSy...`) do Google AI Studio nos Secrets do Streamlit.")
-
-    st.markdown("---")
-    if st.button("🚪 Sair do Sistema", use_container_width=True):
-        st.session_state["logged_in"] = False
-        st.rerun()
-
 # ÁREA CENTRAL
 st.title("🛡️ Central de Risco e Crédito")
 st.markdown("Bem-vindo ao portal unificado de validação de locações.")
@@ -311,13 +308,15 @@ with abas[0]:
     if st.button("🚀 INICIAR ANÁLISE DE RISCO", type="primary", use_container_width=True):
         if not nome_cliente or not equip_nome or not documentos:
             st.error("⚠️ Por favor, preencha as 3 etapas (Cliente, Equipamento e Anexos) antes de iniciar.")
-        elif not CHAVE_API.startswith("AIzaSy"):
-            st.error("❌ A chave cadastrada no sistema não inicia com 'AIzaSy'. Acesse o Google AI Studio para gerar uma chave Válida.")
+        elif not CHAVE_API or len(CHAVE_API) < 10:
+            st.error("❌ Por favor, informe uma API Key do Gemini na barra lateral para prosseguir.")
         else:
             with st.spinner('A IA está processando as matrizes de risco, lendo documentos e cruzando bases...'):
                 try:
-                    payload = []
+                    # Instancia o cliente com a chave fornecida na tela ou nos segredos
+                    client = genai.Client(api_key=CHAVE_API)
                     
+                    payload = []
                     for doc in documentos:
                         payload.append(
                             types.Part.from_bytes(
@@ -385,7 +384,7 @@ with abas[0]:
                     salvar_no_historico(loja, usr_info['nome'], nome_cliente, tipo_cliente, equip_nome, val_equip, forma_pagamento, texto_resultado)
 
                 except Exception as e:
-                    st.error(f"Erro na IA: {e}")
+                    st.error(f"Erro na comunicação com a API: {e}")
 
     if 'resultado_parecer' in st.session_state and st.session_state['resultado_parecer']:
         st.success("✅ Avaliação Finalizada!")
