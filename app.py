@@ -7,6 +7,7 @@ import os
 import pandas as pd
 from datetime import datetime
 from google import genai
+from google.genai import types
 
 # Dependências para geração de PDF
 from reportlab.lib.pagesizes import letter
@@ -77,7 +78,7 @@ if not st.session_state["logged_in"]:
                         st.error("❌ Credenciais inválidas. Tente novamente.")
     st.stop()
 
-# --- CHAVE DA API (RAIZ ORIGINAL RESTAURADA) ---
+# --- CHAVE DA API ---
 if "GEMINI_API_KEY" in st.secrets:
     CHAVE_API = st.secrets["GEMINI_API_KEY"]
 else:
@@ -378,19 +379,16 @@ with abas[0]:
         else:
             with st.spinner('A IA está processando as matrizes de risco, lendo documentos e cruzando bases...'):
                 try:
-                    # MONTANDO O PAYLOAD ORIGINAL EXATAMENTE COMO ESTAVA ONTEM
-                    input_payload = []
+                    payload = []
+                    
+                    # Converte cada anexo para o tipo de dado nativo de API Keys do SDK
                     for doc in documentos:
-                        bytes_data = doc.getvalue()
-                        b64_data = base64.b64encode(bytes_data).decode("utf-8")
-                        mime_type = doc.type
-                        media_type = "image" if mime_type.startswith("image/") else "document"
-                        
-                        input_payload.append({
-                            "type": media_type,
-                            "mime_type": mime_type,
-                            "data": b64_data,
-                        })
+                        payload.append(
+                            types.Part.from_bytes(
+                                data=doc.getvalue(),
+                                mime_type=doc.type
+                            )
+                        )
 
                     prompt = f"""
                     Você é o Analista Master de Risco Financeiro e Fraude da Casa do Construtor.
@@ -434,15 +432,15 @@ with abas[0]:
                     - Destaque: Para Pessoa Física lembre expressamente que o pagamento é À Vista.
                     """
 
-                    input_payload.append({"type": "text", "text": prompt})
+                    payload.append(prompt)
 
-                    # CHAMADA ORIGINAL (A QUE FUNCIONA NA SUA CHAVE DE API)
-                    interaction = client.interactions.create(
-                        model="gemini-3.6-flash",
-                        input=input_payload
+                    # Chamada direta via API Key usando o modelo estável gemini-2.5-flash
+                    response = client.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=payload
                     )
 
-                    texto_resultado = interaction.output_text
+                    texto_resultado = response.text
                     st.session_state['resultado_parecer'] = texto_resultado
                     st.session_state['nome_cliente_analisado'] = nome_cliente
                     
