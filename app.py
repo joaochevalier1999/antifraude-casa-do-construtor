@@ -80,14 +80,12 @@ erro_auth = None
 
 if GOOGLE_AUTH_INSTALLED and "GCP_CREDENTIALS" in st.secrets:
     try:
-        # Carrega o JSON que está salvo no secrets
         creds_json = json.loads(st.secrets["GCP_CREDENTIALS"])
         
-        # Pede autorização específica para usar a API de IA do Google
-        escopos = ['https://www.googleapis.com/auth/cloud-platform']
+        # ESCOPO ESPECÍFICO DA API GENERATIVE LANGUAGE (GEMINI)
+        escopos = ['https://www.googleapis.com/auth/generative-language']
         credenciais = service_account.Credentials.from_service_account_info(creds_json, scopes=escopos)
         
-        # Gera o token em tempo real (dura 1 hora)
         req_auth = GoogleAuthRequest()
         credenciais.refresh(req_auth)
         token_acesso_valido = credenciais.token
@@ -109,7 +107,7 @@ with st.sidebar:
     if not GOOGLE_AUTH_INSTALLED:
         st.error("🔴 Falta adicionar `google-auth` no requirements.txt do GitHub!")
     elif token_acesso_valido:
-        st.success("🟢 Conta de Serviço (JSON) Conectada e Autenticada!")
+        st.success("🟢 Conta de Serviço (JSON) Autenticada com Escopo do Gemini!")
     else:
         st.error("🔴 JSON de Serviço não configurado nos Secrets.")
         if erro_auth: st.caption(erro_auth)
@@ -243,7 +241,6 @@ with abas[0]:
                     """
                     payload_parts.append({"text": prompt})
 
-                    # O PULO DO GATO: Usa o token fabricado via JSON
                     url_api = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
                     headers_api = {
                         "Content-Type": "application/json",
@@ -256,7 +253,7 @@ with abas[0]:
                     if res.status_code == 200:
                         texto_resultado = res.json()['candidates'][0]['content']['parts'][0]['text']
                         st.session_state['resultado_parecer'] = texto_resultado
-                        pdf = gerar_pdf_parecer(nome_cliente, tipo_cliente, forma_pagamento, loja, equip_nome, val_equip, texto_resultado)
+                        pdf = gerar_pdf_parecer(nome_cliente, tipo_pessoa, forma_pagamento, loja, equip_nome, val_equip, texto_resultado)
                         st.session_state['pdf_bytes'] = pdf
                         salvar_no_historico(loja, usr_info['nome'], nome_cliente, tipo_cliente, equip_nome, val_equip, forma_pagamento, texto_resultado)
                     else:
