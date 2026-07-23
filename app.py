@@ -84,12 +84,12 @@ if not st.session_state["logged_in"]:
                         st.error("❌ Credenciais inválidas. Tente novamente.")
     st.stop()
 
-# --- CARREGAMENTO SEGURO DA CHAVE DA API ---
+# --- CARREGAMENTO SEGURO DA CHAVE (AQ...) ---
 CHAVE_API = ""
 if "GEMINI_API_KEY" in st.secrets and st.secrets["GEMINI_API_KEY"]:
-    CHAVE_API = str(st.secrets["GEMINI_API_KEY"]).strip()
+    CHAVE_API = str(st.secrets["GEMINI_API_KEY"]).strip().strip('"').strip("'")
 elif os.getenv("GEMINI_API_KEY"):
-    CHAVE_API = str(os.getenv("GEMINI_API_KEY")).strip()
+    CHAVE_API = str(os.getenv("GEMINI_API_KEY")).strip().strip('"').strip("'")
 
 # BARRA LATERAL DE NAVEGAÇÃO
 usr_info = st.session_state["usuario_atual"]
@@ -103,10 +103,10 @@ with st.sidebar:
     st.markdown("---")
     
     if CHAVE_API:
-        st.success("🟢 API Key Conectada")
+        st.success("🟢 API Key Conectada com Sucesso")
     else:
-        st.warning("⚠️ Chave não configurada no Secrets")
-        chave_manual = st.text_input("Cole sua chave aqui se necessário:", type="password")
+        st.warning("⚠️ Nenhuma chave encontrada nos Secrets")
+        chave_manual = st.text_input("Cole sua chave (AQ...) aqui:", type="password")
         if chave_manual.strip():
             CHAVE_API = chave_manual.strip()
 
@@ -330,6 +330,7 @@ with abas[0]:
 
                     payload_parts.append({"text": prompt})
 
+                    # ENVIO CORRETO VIA CABEÇALHO HTTP (NUNCA NA URL)
                     url_api = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
                     headers_api = {
                         "Content-Type": "application/json",
