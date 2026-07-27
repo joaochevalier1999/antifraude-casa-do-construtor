@@ -31,92 +31,41 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilização CSS de Alto Contraste (Garante visibilidade em temas Claros e Escuros)
+# Estilização CSS de Alto Contraste (Unificação de visual)
 st.markdown("""
     <style>
-    /* Forçar tema claro uniforme e alto contraste */
-    .stApp { 
-        background-color: #F8FAFC !important; 
-        color: #0F172A !important; 
-    }
-    
-    /* Garantir texto escuro e visível em todos os rótulos e títulos */
-    p, span, label, h1, h2, h3, h4, h5, h6, div, .stMarkdown { 
-        color: #0F172A !important; 
-    }
+    .stApp { background-color: #F8FAFC !important; color: #0F172A !important; }
+    p, span, label, h1, h2, h3, h4, h5, h6, div, .stMarkdown { color: #0F172A !important; }
 
-    /* Botão Principal */
     div.stButton > button[kind="primary"] { 
-        background-color: #003366 !important; 
-        color: #FFFFFF !important; 
-        border-radius: 8px !important; 
-        border: 2px solid #003366 !important; 
-        padding: 10px 24px !important; 
-        font-weight: bold !important; 
-        transition: all 0.3s !important; 
+        background-color: #003366 !important; color: #FFFFFF !important; 
+        border-radius: 8px !important; border: 2px solid #003366 !important; 
+        padding: 10px 24px !important; font-weight: bold !important; transition: all 0.3s !important; 
     }
     div.stButton > button[kind="primary"]:hover { 
-        background-color: #FBC02D !important; 
-        color: #003366 !important; 
-        border: 2px solid #FBC02D !important; 
+        background-color: #FBC02D !important; color: #003366 !important; border: 2px solid #FBC02D !important; 
     }
 
-    /* Contêineres de Seções */
     div[data-testid="stVerticalBlock"] > div[style*="border"] { 
-        border-radius: 12px !important; 
-        background-color: #FFFFFF !important; 
-        box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.05) !important; 
-        border: 1px solid #CBD5E1 !important; 
-        padding: 20px !important; 
+        border-radius: 12px !important; background-color: #FFFFFF !important; 
+        box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.05) !important; border: 1px solid #CBD5E1 !important; padding: 20px !important; 
     }
 
-    /* Ajuste de Caixas de Texto, Selectbox e Inputs para leitura limpa */
-    div[data-baseweb="select"] > div, 
-    div[data-baseweb="input"] > div, 
-    input, textarea {
-        background-color: #FFFFFF !important;
-        color: #0F172A !important;
-        border: 1px solid #94A3B8 !important;
-        border-radius: 6px !important;
+    div[data-baseweb="select"] > div, div[data-baseweb="input"] > div, input, textarea {
+        background-color: #FFFFFF !important; color: #0F172A !important;
+        border: 1px solid #94A3B8 !important; border-radius: 6px !important;
     }
 
-    /* Opções dos menus suspensos */
-    div[data-baseweb="menu"] * {
-        background-color: #FFFFFF !important;
-        color: #0F172A !important;
-    }
+    div[data-baseweb="menu"] * { background-color: #FFFFFF !important; color: #0F172A !important; }
+    div[data-testid="stAlert"] * { color: #0F172A !important; }
 
-    /* Caixas de Alerta (st.warning, st.info, st.error, st.success) */
-    div[data-testid="stAlert"] {
-        border-radius: 8px !important;
-    }
-    div[data-testid="stAlert"] * {
-        color: #0F172A !important;
-    }
-
-    /* Banners e Etiquetas */
     .badge-homologacao {
-        background-color: #FEF3C7 !important; 
-        color: #92400E !important; 
-        border: 1px solid #FCD34D !important;
-        padding: 8px 15px !important; 
-        border-radius: 8px !important; 
-        font-weight: bold !important; 
-        text-align: center !important; 
-        margin-bottom: 15px !important;
+        background-color: #FEF3C7 !important; color: #92400E !important; border: 1px solid #FCD34D !important;
+        padding: 8px 15px !important; border-radius: 8px !important; font-weight: bold !important; text-align: center !important; margin-bottom: 15px !important;
     }
 
-    /* Radio buttons (PF / PJ) */
-    div[role="radiogroup"] label p {
-        color: #0F172A !important;
-        font-weight: 600 !important;
-    }
-
-    /* Abas de Navegação */
-    button[data-baseweb="tab"] p, button[data-baseweb="tab"] div {
-        color: #0F172A !important;
-        font-weight: bold !important;
-    }
+    div[role="radiogroup"] label p { color: #0F172A !important; font-weight: 600 !important; }
+    button[data-baseweb="tab"] p, button[data-baseweb="tab"] div { color: #0F172A !important; font-weight: bold !important; }
 
     #MainMenu {visibility: hidden;} footer {visibility: hidden;}
     </style>
@@ -184,11 +133,13 @@ if GOOGLE_AUTH_INSTALLED and "GCP_CREDENTIALS" in st.secrets:
 # --- FUNÇÕES DE ARMAZENAMENTO PERMANENTE (SHEETS & GCS REST API) ---
 SPREADSHEET_ID = st.secrets.get("SPREADSHEET_ID", None)
 GCS_BUCKET_NAME = st.secrets.get("GCS_BUCKET_NAME", None)
+if GCS_BUCKET_NAME and "nome-do-seu-bucket" in GCS_BUCKET_NAME:
+    GCS_BUCKET_NAME = None # Limpa placeholder das secrets
+
 ARQUIVO_HISTORICO = "historico_analises.csv"
 ARQUIVO_BLACKLIST = "blacklist_rede.csv"
 
 def append_google_sheet(tab_name, row_values):
-    """Envia uma nova linha para a Planilha do Google via REST API."""
     if not SPREADSHEET_ID or not token_acesso_valido:
         return False
     try:
@@ -201,7 +152,6 @@ def append_google_sheet(tab_name, row_values):
         return False
 
 def read_google_sheet(tab_name):
-    """Lê os dados de uma aba da Planilha do Google via REST API."""
     if not SPREADSHEET_ID or not token_acesso_valido:
         return None
     try:
@@ -217,7 +167,6 @@ def read_google_sheet(tab_name):
     return None
 
 def upload_to_gcs(object_name, file_bytes, mime_type):
-    """Envia arquivos (PDF ou Imagens) permanentemente para o Google Cloud Storage."""
     if not GCS_BUCKET_NAME or not token_acesso_valido:
         return False
     try:
@@ -283,7 +232,6 @@ def gerar_pdf_parecer(nome_cliente, doc_cliente, tipo_pessoa, prazo, loja, equip
 
     val_f = f"R$ {valor_total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
     
-    # CORREÇÃO CRÍTICA REPORTLAB: Usar <br/> em vez de <br>
     t = Table([
         [Paragraph("<b>Cliente / CPF-CNPJ:</b>", body_style), Paragraph(f"{html.escape(nome_cliente)} ({doc_cliente}) - {tipo_pessoa}", body_style)],
         [Paragraph("<b>Prazo Solicitado:</b>", body_style), Paragraph(prazo, body_style)],
@@ -374,11 +322,15 @@ st.markdown("<div class='badge-homologacao'>🧪 AMBIENTE DE HOMOLOGAÇÃO / TES
 st.title("🛡️ Central de Risco e Crédito")
 st.caption("Validação de cadastros, análise de risco documental e sinergia de obra.")
 
-abas_lista = ["🚀 Nova Análise", "🚨 Blacklist / Suspeitos", "📊 Dashboard Gerencial", "📋 Histórico Geral"] if eh_master else ["🚀 Nova Análise", "📋 Meu Histórico"]
-abas = st.tabs(abas_lista)
+# NAVEGAÇÃO DE ABAS ISOLADA (SEM DEPENDÊNCIA DE BUSCA DE STRINGS)
+if eh_master:
+    aba_nova, aba_black, aba_dash, aba_hist = st.tabs(["🚀 Nova Análise", "🚨 Blacklist / Suspeitos", "📊 Dashboard Gerencial", "📋 Histórico Geral"])
+else:
+    aba_nova, aba_hist = st.tabs(["🚀 Nova Análise", "📋 Meu Histórico"])
+    aba_black, aba_dash = None, None
 
 # --- ABA 1: NOVA ANÁLISE ---
-with abas[0]:
+with aba_nova:
     with st.container(border=True):
         st.markdown("#### 1️⃣ Identificação do Cliente e Operação")
         col_a1, col_a2 = st.columns(2)
@@ -550,9 +502,8 @@ with abas[0]:
             )
 
 # --- ABA 2: BLACKLIST DA REDE ---
-if "Blacklist / Suspeitos" in abas_lista:
-    idx_black = abas_lista.index("Blacklist / Suspeitos")
-    with abas[idx_black]:
+if eh_master and aba_black:
+    with aba_black:
         st.markdown("### 🚨 Cadastro de Documentos Suspeitos (Blacklist da Rede)")
         st.caption("Cadastre CPFs/CNPJs para bloquear instantaneamente em todas as 12 lojas.")
         
@@ -591,9 +542,8 @@ if "Blacklist / Suspeitos" in abas_lista:
             st.info("Nenhum documento cadastrado na Blacklist até o momento.")
 
 # --- ABA 3: DASHBOARD GERENCIAL ---
-if "Dashboard Gerencial" in abas_lista:
-    idx_dash = abas_lista.index("Dashboard Gerencial")
-    with abas[idx_dash]:
+if eh_master and aba_dash:
+    with aba_dash:
         st.markdown("### 📊 Visão Geral e Indicadores da Rede")
         
         df_hist = read_google_sheet("Historico")
@@ -626,8 +576,7 @@ if "Dashboard Gerencial" in abas_lista:
             st.info("Aguardando primeiras análises para montar o Dashboard...")
 
 # --- ABA 4: HISTÓRICO GERAL ---
-idx_hist = abas_lista.index("Histórico Geral" if eh_master else "Meu Histórico")
-with abas[idx_hist]:
+with aba_hist:
     st.markdown("### 📋 Registro Geral de Auditoria")
     df_hist_all = read_google_sheet("Historico")
     if df_hist_all is None and os.path.exists(ARQUIVO_HISTORICO):
