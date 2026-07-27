@@ -31,26 +31,93 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilização CSS Profissional + Banner de Homologação
+# Estilização CSS de Alto Contraste (Garante visibilidade em temas Claros e Escuros)
 st.markdown("""
     <style>
-    .stApp { background-color: #F4F6F9; }
-    h1, h2, h3 { color: #003366 !important; font-family: 'Arial', sans-serif; }
+    /* Forçar tema claro uniforme e alto contraste */
+    .stApp { 
+        background-color: #F8FAFC !important; 
+        color: #0F172A !important; 
+    }
+    
+    /* Garantir texto escuro e visível em todos os rótulos e títulos */
+    p, span, label, h1, h2, h3, h4, h5, h6, div, .stMarkdown { 
+        color: #0F172A !important; 
+    }
+
+    /* Botão Principal */
     div.stButton > button[kind="primary"] { 
-        background-color: #003366; color: #FFFFFF; border-radius: 8px; border: 2px solid #003366; 
-        padding: 10px 24px; font-weight: bold; transition: all 0.3s; 
+        background-color: #003366 !important; 
+        color: #FFFFFF !important; 
+        border-radius: 8px !important; 
+        border: 2px solid #003366 !important; 
+        padding: 10px 24px !important; 
+        font-weight: bold !important; 
+        transition: all 0.3s !important; 
     }
     div.stButton > button[kind="primary"]:hover { 
-        background-color: #FBC02D; color: #003366; border: 2px solid #FBC02D; 
+        background-color: #FBC02D !important; 
+        color: #003366 !important; 
+        border: 2px solid #FBC02D !important; 
     }
+
+    /* Contêineres de Seções */
     div[data-testid="stVerticalBlock"] > div[style*="border"] { 
-        border-radius: 12px; background-color: #FFFFFF; box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.05); 
-        border: 1px solid #E0E0E0; padding: 20px; 
+        border-radius: 12px !important; 
+        background-color: #FFFFFF !important; 
+        box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.05) !important; 
+        border: 1px solid #CBD5E1 !important; 
+        padding: 20px !important; 
     }
+
+    /* Ajuste de Caixas de Texto, Selectbox e Inputs para leitura limpa */
+    div[data-baseweb="select"] > div, 
+    div[data-baseweb="input"] > div, 
+    input, textarea {
+        background-color: #FFFFFF !important;
+        color: #0F172A !important;
+        border: 1px solid #94A3B8 !important;
+        border-radius: 6px !important;
+    }
+
+    /* Opções dos menus suspensos */
+    div[data-baseweb="menu"] * {
+        background-color: #FFFFFF !important;
+        color: #0F172A !important;
+    }
+
+    /* Caixas de Alerta (st.warning, st.info, st.error, st.success) */
+    div[data-testid="stAlert"] {
+        border-radius: 8px !important;
+    }
+    div[data-testid="stAlert"] * {
+        color: #0F172A !important;
+    }
+
+    /* Banners e Etiquetas */
     .badge-homologacao {
-        background-color: #FFF3CD; color: #856404; border: 1px solid #FFEEBA;
-        padding: 8px 15px; border-radius: 8px; font-weight: bold; text-align: center; margin-bottom: 15px;
+        background-color: #FEF3C7 !important; 
+        color: #92400E !important; 
+        border: 1px solid #FCD34D !important;
+        padding: 8px 15px !important; 
+        border-radius: 8px !important; 
+        font-weight: bold !important; 
+        text-align: center !important; 
+        margin-bottom: 15px !important;
     }
+
+    /* Radio buttons (PF / PJ) */
+    div[role="radiogroup"] label p {
+        color: #0F172A !important;
+        font-weight: 600 !important;
+    }
+
+    /* Abas de Navegação */
+    button[data-baseweb="tab"] p, button[data-baseweb="tab"] div {
+        color: #0F172A !important;
+        font-weight: bold !important;
+    }
+
     #MainMenu {visibility: hidden;} footer {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
@@ -120,12 +187,12 @@ GCS_BUCKET_NAME = st.secrets.get("GCS_BUCKET_NAME", None)
 ARQUIVO_HISTORICO = "historico_analises.csv"
 ARQUIVO_BLACKLIST = "blacklist_rede.csv"
 
-def append_google_sheet(range_name, row_values):
-    """Envia uma nova linha para a Planilha do Google via REST API sem bibliotecas extras."""
+def append_google_sheet(tab_name, row_values):
+    """Envia uma nova linha para a Planilha do Google via REST API."""
     if not SPREADSHEET_ID or not token_acesso_valido:
         return False
     try:
-        url = f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}/values/{range_name}:append?valueInputOption=USER_ENTERED"
+        url = f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}/values/{tab_name}!A:Z:append?valueInputOption=USER_ENTERED"
         headers = {"Authorization": f"Bearer {token_acesso_valido}", "Content-Type": "application/json"}
         body = {"values": [row_values]}
         res = requests.post(url, headers=headers, json=body)
@@ -133,12 +200,12 @@ def append_google_sheet(range_name, row_values):
     except Exception:
         return False
 
-def read_google_sheet(range_name):
+def read_google_sheet(tab_name):
     """Lê os dados de uma aba da Planilha do Google via REST API."""
     if not SPREADSHEET_ID or not token_acesso_valido:
         return None
     try:
-        url = f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}/values/{range_name}"
+        url = f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}/values/{tab_name}!A1:Z5000"
         headers = {"Authorization": f"Bearer {token_acesso_valido}"}
         res = requests.get(url, headers=headers)
         if res.status_code == 200:
@@ -162,8 +229,7 @@ def upload_to_gcs(object_name, file_bytes, mime_type):
         return False
 
 def carregar_blacklist():
-    # Tenta carregar do Google Sheets primeiro
-    df_sheets = read_google_sheet("Blacklist!A1:Z1000")
+    df_sheets = read_google_sheet("Blacklist")
     if df_sheets is not None and not df_sheets.empty:
         return df_sheets
     if os.path.exists(ARQUIVO_BLACKLIST):
@@ -188,10 +254,8 @@ def salvar_no_historico(filial, atendente, cliente, doc_cliente, tipo_pessoa, eq
         equipamentos_str, str(valor_total), prazo, status
     ]
 
-    # Salva na nuvem (Google Sheets) se configurado
-    append_google_sheet("Historico!A1", row_data)
+    append_google_sheet("Historico", row_data)
 
-    # Salva no arquivo CSV local
     novo_registro = pd.DataFrame([{
         "Data/Hora": row_data[0], "Data_Dia": row_data[1], "Filial": row_data[2], "Atendente": row_data[3],
         "Cliente": row_data[4], "CPF_CNPJ": row_data[5], "Tipo_Pessoa": row_data[6], "Equipamentos": row_data[7],
@@ -218,10 +282,12 @@ def gerar_pdf_parecer(nome_cliente, doc_cliente, tipo_pessoa, prazo, loja, equip
     story.append(Spacer(1, 10))
 
     val_f = f"R$ {valor_total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+    
+    # CORREÇÃO CRÍTICA REPORTLAB: Usar <br/> em vez de <br>
     t = Table([
         [Paragraph("<b>Cliente / CPF-CNPJ:</b>", body_style), Paragraph(f"{html.escape(nome_cliente)} ({doc_cliente}) - {tipo_pessoa}", body_style)],
         [Paragraph("<b>Prazo Solicitado:</b>", body_style), Paragraph(prazo, body_style)],
-        [Paragraph("<b>Filial / Equipamentos:</b>", body_style), Paragraph(f"{html.escape(loja)}<br><b>Itens:</b> {html.escape(equipamentos_str)}<br><b>Total Reposição:</b> {val_f}", body_style)],
+        [Paragraph("<b>Filial / Equipamentos:</b>", body_style), Paragraph(f"{html.escape(loja)}<br/><b>Itens:</b> {html.escape(equipamentos_str)}<br/><b>Total Reposição:</b> {val_f}", body_style)],
     ], colWidths=[140, 380])
     t.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F2F4F8')), ('GRID', (0, 0), (-1, -1), 0.5, colors.gray)]))
     story.append(t)
@@ -277,24 +343,24 @@ eh_master = usr_info["perfil"] == "master"
 
 with st.sidebar:
     st.image("https://casadoconstrutor.com.br/wp-content/uploads/2021/04/logo-casa-do-construtor.png", width=180)
-    st.markdown("<div class='badge-homologacao'>🧪 AMBIENTE DE HOMOLOGAÇÃO</div>", unsafe_allow_html=True)
+    st.markdown("<div class='badge-homologacao'>🧪 HOMOLOGAÇÃO</div>", unsafe_allow_html=True)
     st.markdown(f"### 👤 {usr_info['nome']}")
     st.markdown(f"**📍 Unidade:** {usr_info['filial']}")
     st.markdown("---")
     
     st.markdown("🔍 **Status do Sistema**")
     if token_acesso_valido and gcp_project_id:
-        st.success(f"🟢 Nuvem Autenticada!\n`{gcp_project_id}`")
+        st.success(f"🟢 Nuvem Conectada!\n`{gcp_project_id}`")
     else:
-        st.error("🔴 JSON GCP não configurado nos Secrets.")
+        st.error("🔴 JSON GCP ausente nos Secrets.")
 
     if SPREADSHEET_ID:
-        st.success("🟢 Google Sheets Conectado!")
+        st.success("🟢 Google Sheets Ativo!")
     else:
-        st.caption("🟡 Sheets não configurado (Usando CSV Local).")
+        st.caption("🟡 Sheets não configurado (Uso Local CSV).")
 
     if GCS_BUCKET_NAME:
-        st.success("🟢 Google Cloud Storage Conectado!")
+        st.success("🟢 Storage de Fotos Ativo!")
     else:
         st.caption("🟡 Storage não configurado.")
 
@@ -303,10 +369,10 @@ with st.sidebar:
         st.session_state["logged_in"] = False
         st.rerun()
 
-# ÁREA CENTRAL DE NAVEGAÇÃO
-st.markdown("<div class='badge-homologacao'>🧪 VOCÊ ESTÁ NO AMBIENTE DE TESTES E HOMOLOGAÇÃO</div>", unsafe_allow_html=True)
-st.title("🛡️ Central de Risco & Antifraude")
-st.caption("Validação inteligente de cadastros e análise de risco para locação de equipamentos.")
+# ÁREA CENTRAL
+st.markdown("<div class='badge-homologacao'>🧪 AMBIENTE DE HOMOLOGAÇÃO / TESTES</div>", unsafe_allow_html=True)
+st.title("🛡️ Central de Risco e Crédito")
+st.caption("Validação de cadastros, análise de risco documental e sinergia de obra.")
 
 abas_lista = ["🚀 Nova Análise", "🚨 Blacklist / Suspeitos", "📊 Dashboard Gerencial", "📋 Histórico Geral"] if eh_master else ["🚀 Nova Análise", "📋 Meu Histórico"]
 abas = st.tabs(abas_lista)
@@ -338,21 +404,21 @@ with abas[0]:
         with col_a2:
             referencias = ""
             if tipo_cliente == "Pessoa Física (PF)":
-                st.warning("⚠️ **Regra da Rede:** Pagamento faturado a prazo NÃO É PERMITIDO para Pessoa Física.")
+                st.warning("⚠️ **Atenção:** Pagamento faturado a prazo NÃO É PERMITIDO para Pessoa Física.")
                 forma_pagamento = st.selectbox("Condição de Pagamento Permitida", ["À Vista / Débito / Pix (Antecipado)"])
             else:
                 forma_pagamento = st.selectbox("💳 Condição de Pagamento Solicitada", ["À Vista / Débito / Pix", "Boleto 7 dias", "Boleto 14 dias", "Boleto 21 dias", "Boleto 28 dias"])
                 
                 if subtipo_pj == "Empresa Padrão (LTDA/SA)":
-                    st.info("📄 **Checklist Documental Obrigatório:**\n- Contrato Social Atualizado\n- CNH do solicitante")
-                    referencias = st.text_area("📞 Feedback de Referências Comerciais", placeholder="Descreva o retorno das referências fornecidas...")
+                    st.info("📄 **Checklist Documental:**\n- Contrato Social Atualizado\n- CNH do solicitante")
+                    referencias = st.text_area("📞 Feedback de Referências Comerciais", placeholder="Descreva o retorno das referências...")
                 elif subtipo_pj in ["Condomínio", "MEI"]:
-                    st.warning(f"📄 **Checklist Documental ({subtipo_pj}):**\n- Ata de eleição / Certificado MEI\n- CNH + Comprovante de Residência\n⚠️ **Limite de Faturamento:** Máximo 7 dias no boleto.")
+                    st.warning(f"📄 **Checklist Documental ({subtipo_pj}):**\n- Ata de eleição / Certificado MEI\n- CNH + Comprovante de Residência\n⚠️ **Limite:** Máximo 7 dias no boleto.")
                     if "Boleto" in forma_pagamento: referencias = st.text_area("📞 Referências Comerciais")
 
     with st.container(border=True):
         st.markdown("#### 2️⃣ Equipamento(s) Solicitado(s)")
-        equipamentos_selecionados = st.multiselect("🔍 Selecione um ou mais equipamentos para a mesma locação:", sorted(list(CATALOGO_EQUIPAMENTOS.keys())))
+        equipamentos_selecionados = st.multiselect("🔍 Selecione os equipamentos para a locação:", sorted(list(CATALOGO_EQUIPAMENTOS.keys())))
         
         valor_total_reposicao = 0.0
         if equipamentos_selecionados:
@@ -379,12 +445,12 @@ with abas[0]:
         elif not black_match.empty:
             motivo = black_match.iloc[0]['Motivo_Alerta']
             origem = black_match.iloc[0]['Cadastrado_Por']
-            st.error(f"🚨 **BLOQUEIO IMEDIATO DE SEGURANÇA (BLACK LIST DA REDE)!**\n\nEste documento **({doc_cliente})** está cadastrado na lista negra de alerta da Casa do Construtor.\n\n**Motivo:** {motivo}\n**Registrado por:** {origem}")
-            salvar_no_historico(loja, usr_info['nome'], nome_cliente, doc_cliente, tipo_cliente, ", ".join(equipamentos_selecionados), valor_total_reposicao, forma_pagamento, f"🔴 REPROVADO - CONSTANTE NA BLACKLIST DA REDE: {motivo}")
+            st.error(f"🚨 **BLOQUEIO IMEDIATO DE SEGURANÇA (BLACK LIST DA REDE)!**\n\nEste documento **({doc_cliente})** está na lista negra da Casa do Construtor.\n\n**Motivo:** {motivo}\n**Registrado por:** {origem}")
+            salvar_no_historico(loja, usr_info['nome'], nome_cliente, doc_cliente, tipo_cliente, ", ".join(equipamentos_selecionados), valor_total_reposicao, forma_pagamento, f"🔴 REPROVADO - BLACKLIST: {motivo}")
         elif not token_acesso_valido or not gcp_project_id:
             st.error("❌ Erro de Autenticação na Nuvem. Verifique o painel lateral.")
         else:
-            with st.spinner('A IA (Gemini 2.5 Flash) está verificando os documentos, sinergia de obra e regras de risco...'):
+            with st.spinner('A IA (Gemini 2.5 Flash) está processando os documentos e analisando a operação...'):
                 try:
                     payload_parts = []
                     data_hoje = datetime.now().strftime("%Y-%m-%d")
@@ -394,10 +460,8 @@ with abas[0]:
                         b64_data = base64.b64encode(file_bytes).decode("utf-8")
                         payload_parts.append({"inlineData": {"mimeType": doc.type, "data": b64_data}})
 
-                        # Upload automático para o Google Cloud Storage se configurado
                         if GCS_BUCKET_NAME:
-                            gcs_path = f"analises/{data_hoje}/{doc_limpo}/{doc.name}"
-                            upload_to_gcs(gcs_path, file_bytes, doc.type)
+                            upload_to_gcs(f"analises/{data_hoje}/{doc_limpo}/{doc.name}", file_bytes, doc.type)
 
                     equipamentos_str = ", ".join(equipamentos_selecionados)
 
@@ -436,13 +500,13 @@ with abas[0]:
                     # 🟡 APROVADO COM RESTRIÇÃO
                     # 🔴 REPROVADO
                     
-                    **Resumo da Decisão:** (Motivo direto e claro da decisão)
+                    **Resumo da Decisão:** (Motivo direto e claro)
                     
-                    **Justificativa Técnica e Documental:** (Detalhe análise de CPF/CNPJ, comprovante de residência e dívidas)
+                    **Justificativa Técnica e Documental:** (Detalhe análise de CPF/CNPJ, comprovantes e dívidas)
                     
-                    **Análise de Sinergia dos Equipamentos:** (Comente sobre a coerência da combinação de itens com a fase da obra)
+                    **Análise de Sinergia dos Equipamentos:** (Comente a coerência com a fase da obra)
                     
-                    **⚠️ Alerta de Segurança e Validação Antifraude:** (Orientações obrigatórias para o balcão conferir na entrega)
+                    **⚠️ Alerta de Segurança e Validação Antifraude:** (Orientações obrigatórias para a entrega no balcão)
                     """
                     payload_parts.append({"text": prompt})
 
@@ -455,10 +519,10 @@ with abas[0]:
                     if res.status_code == 200:
                         texto_resultado = res.json()['candidates'][0]['content']['parts'][0]['text']
                         st.session_state['resultado_parecer'] = texto_resultado
+                        
                         pdf_bytes = gerar_pdf_parecer(nome_cliente, doc_cliente, tipo_cliente, forma_pagamento, loja, equipamentos_str, valor_total_reposicao, texto_resultado)
                         st.session_state['pdf_bytes'] = pdf_bytes
                         
-                        # Salva o PDF do parecer no GCS se configurado
                         if GCS_BUCKET_NAME:
                             upload_to_gcs(f"analises/{data_hoje}/{doc_limpo}/Parecer_CDC.pdf", pdf_bytes, "application/pdf")
                             
@@ -469,27 +533,35 @@ with abas[0]:
                 except Exception as e:
                     st.error(f"Erro na execução da requisição: {e}")
 
+    # EXIBIÇÃO SEGURA DO RESULTADO
     if 'resultado_parecer' in st.session_state and st.session_state['resultado_parecer']:
-        st.success("✅ Avaliação Finalizada com Sucesso!")
+        st.success("✅ Avaliação Finalizada!")
         st.markdown("<hr>", unsafe_allow_html=True)
         st.markdown(st.session_state['resultado_parecer'], unsafe_allow_html=True)
         st.markdown("<hr>", unsafe_allow_html=True)
-        st.download_button("📄 Baixar Relatório PDF do Parecer", data=st.session_state['pdf_bytes'], file_name=f"Parecer_CDC_{doc_cliente}.pdf", mime="application/pdf", type="primary")
-
+        
+        if 'pdf_bytes' in st.session_state and st.session_state['pdf_bytes']:
+            st.download_button(
+                "📄 Baixar Relatório PDF do Parecer", 
+                data=st.session_state['pdf_bytes'], 
+                file_name=f"Parecer_CDC_{doc_cliente if doc_cliente else 'Analise'}.pdf", 
+                mime="application/pdf", 
+                type="primary"
+            )
 
 # --- ABA 2: BLACKLIST DA REDE ---
 if "Blacklist / Suspeitos" in abas_lista:
     idx_black = abas_lista.index("Blacklist / Suspeitos")
     with abas[idx_black]:
         st.markdown("### 🚨 Cadastro de Documentos Suspeitos (Blacklist da Rede)")
-        st.caption("Cadastre CPFs/CNPJs relatados em grupos de locadores ou suspeitos de golpe para bloquear instantaneamente em todas as 12 lojas.")
+        st.caption("Cadastre CPFs/CNPJs para bloquear instantaneamente em todas as 12 lojas.")
         
         with st.container(border=True):
             st.markdown("#### ➕ Incluir Novo Suspeito")
             col_b1, col_b2, col_b3 = st.columns([1.5, 2, 2])
             with col_b1: doc_block = st.text_input("CPF ou CNPJ Suspeito")
             with col_b2: nome_block = st.text_input("Nome / Razão Social do Suspeito")
-            with col_b3: motivo_block = st.text_input("Motivo do Alerta (Ex: Golpe em locadoras/Equipamento sumido)")
+            with col_b3: motivo_block = st.text_input("Motivo do Alerta (Ex: Golpe em locadoras)")
             
             if st.button("🚨 Cadastrar na Lista Negra", type="primary"):
                 if not doc_block or not motivo_block:
@@ -498,8 +570,7 @@ if "Blacklist / Suspeitos" in abas_lista:
                     dt_hoje = datetime.now().strftime("%d/%m/%Y")
                     df_b = carregar_blacklist()
                     
-                    # Salva no Google Sheets se configurado
-                    append_google_sheet("Blacklist!A1", [doc_block.strip(), nome_block.strip(), motivo_block.strip(), dt_hoje, usr_info['nome']])
+                    append_google_sheet("Blacklist", [doc_block.strip(), nome_block.strip(), motivo_block.strip(), dt_hoje, usr_info['nome']])
                     
                     novo_suspeito = pd.DataFrame([{
                         "Documento": doc_block.strip(), "Nome_Razao": nome_block.strip(),
@@ -519,15 +590,13 @@ if "Blacklist / Suspeitos" in abas_lista:
         else:
             st.info("Nenhum documento cadastrado na Blacklist até o momento.")
 
-
 # --- ABA 3: DASHBOARD GERENCIAL ---
 if "Dashboard Gerencial" in abas_lista:
     idx_dash = abas_lista.index("Dashboard Gerencial")
     with abas[idx_dash]:
         st.markdown("### 📊 Visão Geral e Indicadores da Rede")
         
-        # Tenta carregar do Google Sheets primeiro
-        df_hist = read_google_sheet("Historico!A1:Z5000")
+        df_hist = read_google_sheet("Historico")
         if df_hist is None and os.path.exists(ARQUIVO_HISTORICO):
             df_hist = pd.read_csv(ARQUIVO_HISTORICO, sep=";")
             
@@ -556,12 +625,11 @@ if "Dashboard Gerencial" in abas_lista:
         else:
             st.info("Aguardando primeiras análises para montar o Dashboard...")
 
-
 # --- ABA 4: HISTÓRICO GERAL ---
 idx_hist = abas_lista.index("Histórico Geral" if eh_master else "Meu Histórico")
 with abas[idx_hist]:
     st.markdown("### 📋 Registro Geral de Auditoria")
-    df_hist_all = read_google_sheet("Historico!A1:Z5000")
+    df_hist_all = read_google_sheet("Historico")
     if df_hist_all is None and os.path.exists(ARQUIVO_HISTORICO):
         df_hist_all = pd.read_csv(ARQUIVO_HISTORICO, sep=";")
         
