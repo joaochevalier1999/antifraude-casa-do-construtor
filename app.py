@@ -178,7 +178,7 @@ def read_google_sheet(tab_name):
     return None
 
 def atualizar_status_google_sheet(cpf_cnpj, novo_status, parecer_master):
-    """Atualização segura no CSV local e no Google Sheets sem dar crash."""
+    """Atualização segura no CSV local e no Google Sheets."""
     doc_busca = str(cpf_cnpj).strip()
     
     # 1. Atualizar arquivo CSV local
@@ -202,7 +202,7 @@ def atualizar_status_google_sheet(cpf_cnpj, novo_status, parecer_master):
                 df_sheets['CPF_CNPJ'] = df_sheets['CPF_CNPJ'].astype(str).str.strip()
                 matches = df_sheets.index[df_sheets['CPF_CNPJ'] == doc_busca].tolist()
                 if matches:
-                    row_idx = matches[-1] + 2  # Linha correspondente na planilha
+                    row_idx = matches[-1] + 2
                     url = f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}/values/Historico!K{row_idx}?valueInputOption=USER_ENTERED"
                     headers = {"Authorization": f"Bearer {token_acesso_valido}", "Content-Type": "application/json"}
                     body = {"values": [[novo_status]]}
@@ -557,7 +557,7 @@ with aba_nova:
                 type="primary"
             )
 
-# --- ABA 2: REAVALIAÇÃO MASTER (EXCLUSIVA DO GESTOR) ---
+# --- ABA 2: REAVALIAÇÃO MASTER (EXCLUSIVA DO GESTOR - BLINDADA) ---
 if eh_master and aba_reaval:
     with aba_reaval:
         st.markdown("### ⚖️ Painel de Reavaliação de Crédito (Master)")
@@ -576,7 +576,11 @@ if eh_master and aba_reaval:
             if not pendentes.empty:
                 st.warning(f"📌 **{len(pendentes)} Cadastros Aguardando Sua Decisão Final**")
                 
-                opcoes_pendentes = [f"{row['Cliente']} | CPF-CNPJ: {row['CPF_CNPJ']} | Filial: {row['Filial']}" for _, row in pendentes.iterrows()]
+                # Montagem segura com .get() para evitar KeyError
+                opcoes_pendentes = [
+                    f"{row.get('Cliente', 'Sem Nome')} | CPF-CNPJ: {row.get('CPF_CNPJ', 'N/A')} | Filial: {row.get('Filial', 'N/A')}" 
+                    for _, row in pendentes.iterrows()
+                ]
                 sel_cadastro = st.selectbox("🔍 Selecione o cadastro para reavaliar:", opcoes_pendentes)
                 
                 if sel_cadastro:
@@ -586,14 +590,14 @@ if eh_master and aba_reaval:
                     with st.container(border=True):
                         col_r1, col_r2 = st.columns(2)
                         with col_r1:
-                            st.markdown(f"**👤 Cliente:** {dados_cliente['Cliente']}")
-                            st.markdown(f"**📄 Documento:** {dados_cliente['CPF_CNPJ']}")
-                            st.markdown(f"**🏢 Filial:** {dados_cliente['Filial']}")
-                            st.markdown(f"**👤 Atendente:** {dados_cliente['Atendente']}")
+                            st.markdown(f"**👤 Cliente:** {dados_cliente.get('Cliente', 'N/A')}")
+                            st.markdown(f"**📄 Documento:** {dados_cliente.get('CPF_CNPJ', 'N/A')}")
+                            st.markdown(f"**🏢 Filial:** {dados_cliente.get('Filial', 'N/A')}")
+                            st.markdown(f"**👤 Atendente:** {dados_cliente.get('Atendente', 'N/A')}")
                         with col_r2:
-                            st.markdown(f"**📦 Equipamento(s):** {dados_cliente['Equipamentos']}")
+                            st.markdown(f"**📦 Equipamento(s):** {dados_cliente.get('Equipamentos', 'N/A')}")
                             st.markdown(f"**💵 Reposição Total:** {dados_cliente.get('Valor Reposição Total (R$)', 'N/A')}")
-                            st.markdown(f"**💳 Prazo Solicitado:** {dados_cliente['Prazo']}")
+                            st.markdown(f"**💳 Prazo Solicitado:** {dados_cliente.get('Prazo', 'N/A')}")
 
                         if 'Parecer_IA' in dados_cliente and pd.notna(dados_cliente['Parecer_IA']):
                             with st.expander("🔍 Ver Justificativa Inicial da IA"):
@@ -617,19 +621,20 @@ if eh_master and aba_reaval:
                                 novo_status_str = nova_decisao.split()[1]
                                 if "RESTRIÇÃO" in nova_decisao: novo_status_str = "APROVADO COM RESTRIÇÃO"
                                 
-                                atualizar_status_google_sheet(dados_cliente['CPF_CNPJ'], f"🟢 {novo_status_str} (MASTER)", justificativa_master)
+                                doc_alvo = dados_cliente.get('CPF_CNPJ', '')
+                                atualizar_status_google_sheet(doc_alvo, f"🟢 {novo_status_str} (MASTER)", justificativa_master)
                                 
                                 parecer_original = dados_cliente.get('Parecer_IA', 'Parecer de IA reavaliado.')
                                 pdf_master = gerar_pdf_parecer(
-                                    dados_cliente['Cliente'], dados_cliente['CPF_CNPJ'], 
-                                    dados_cliente.get('Tipo_Pessoa', 'PJ/PF'), dados_cliente['Prazo'], 
-                                    dados_cliente['Filial'], dados_cliente['Equipamentos'], 
+                                    dados_cliente.get('Cliente', 'N/A'), doc_alvo, 
+                                    dados_cliente.get('Tipo_Pessoa', 'PJ/PF'), dados_cliente.get('Prazo', 'N/A'), 
+                                    dados_cliente.get('Filial', 'N/A'), dados_cliente.get('Equipamentos', 'N/A'), 
                                     3000.0, parecer_original, 
                                     chancela_master=f"{nova_decisao} - Motivo: {justificativa_master}"
                                 )
                                 
                                 if DRIVE_FOLDER_ID:
-                                    doc_l = re.sub(r'\D', '', str(dados_cliente['CPF_CNPJ']))
+                                    doc_l = re.sub(r'\D', '', str(doc_alvo))
                                     upload_para_google_drive(f"PARECER_MASTER_{doc_l}.pdf", pdf_master, "application/pdf")
 
                                 st.success("✅ Decisão Master registrada! O status foi atualizado para a filial.")
