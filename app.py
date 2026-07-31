@@ -18,7 +18,6 @@ try:
 except ImportError:
     GOOGLE_AUTH_INSTALLED = False
 
-# Dependências ReportLab para PDF
 from reportlab.lib.pagesizes import letter
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -32,57 +31,36 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- ESTILIZAÇÃO CSS DE ALTO CONTRASTE (LGPD & UX CLEAN) ---
+# Estilização CSS Profissional
 st.markdown("""
     <style>
-    .stApp { 
-        background-color: #F8FAFC !important; 
-        color: #0F172A !important; 
-    }
-    p, span, label, h1, h2, h3, h4, h5, h6, div, .stMarkdown { 
-        color: #0F172A !important; 
-    }
+    .stApp { background-color: #F8FAFC !important; color: #0F172A !important; }
+    p, span, label, h1, h2, h3, h4, h5, h6, div, .stMarkdown { color: #0F172A !important; }
     div.stButton > button[kind="primary"] { 
-        background-color: #003366 !important; 
-        color: #FFFFFF !important; 
-        border-radius: 8px !important; 
-        border: 2px solid #003366 !important; 
-        padding: 12px 24px !important; 
-        font-weight: bold !important; 
-        font-size: 16px !important;
+        background-color: #003366 !important; color: #FFFFFF !important; 
+        border-radius: 8px !important; border: 2px solid #003366 !important; 
+        padding: 12px 24px !important; font-weight: bold !important; font-size: 16px !important;
         transition: all 0.3s !important; 
     }
     div.stButton > button[kind="primary"]:hover { 
-        background-color: #FBC02D !important; 
-        color: #003366 !important; 
-        border: 2px solid #FBC02D !important; 
+        background-color: #FBC02D !important; color: #003366 !important; border: 2px solid #FBC02D !important; 
     }
     div[data-testid="stVerticalBlock"] > div[style*="border"] { 
-        border-radius: 12px !important; 
-        background-color: #FFFFFF !important; 
-        box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.06) !important; 
-        border: 1px solid #CBD5E1 !important; 
-        padding: 22px !important; 
+        border-radius: 12px !important; background-color: #FFFFFF !important; 
+        box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.06) !important; border: 1px solid #CBD5E1 !important; padding: 22px !important; 
     }
-    div[data-baseweb="select"] > div, 
-    div[data-baseweb="input"] > div, 
-    input, textarea {
-        background-color: #FFFFFF !important;
-        color: #0F172A !important;
-        border: 1px solid #94A3B8 !important;
-        border-radius: 6px !important;
+    div[data-baseweb="select"] > div, div[data-baseweb="input"] > div, input, textarea {
+        background-color: #FFFFFF !important; color: #0F172A !important;
+        border: 1px solid #94A3B8 !important; border-radius: 6px !important;
     }
-    div[data-baseweb="menu"] * {
-        background-color: #FFFFFF !important;
-        color: #0F172A !important;
-    }
+    div[data-baseweb="menu"] * { background-color: #FFFFFF !important; color: #0F172A !important; }
     div[role="radiogroup"] label p { color: #0F172A !important; font-weight: 600 !important; }
     button[data-baseweb="tab"] p, button[data-baseweb="tab"] div { color: #0F172A !important; font-weight: bold !important; }
     #MainMenu {visibility: hidden;} footer {visibility: hidden;}
     </style>
     """, unsafe_allow_html=True)
 
-# --- BANCO DE USUÁRIOS E SENHAS ---
+# --- USUÁRIOS ---
 USUARIOS = {
     "master": {"senha": "master2026", "nome": "Gestor Geral Master", "filial": "Todas", "perfil": "master"},
     "087_blumenau": {"senha": "cc087", "nome": "Atendente Blumenau", "filial": "087 - Blumenau", "perfil": "user"},
@@ -123,7 +101,7 @@ if not st.session_state["logged_in"]:
                         st.error("❌ Credenciais inválidas.")
     st.stop()
 
-# --- AUTENTICAÇÃO GOOGLE CLOUD (VERTEX AI + SHEETS + DRIVE REST API) ---
+# --- AUTENTICAÇÃO GOOGLE CLOUD ---
 token_acesso_valido = None
 gcp_project_id = None
 erro_auth = None
@@ -132,7 +110,6 @@ if GOOGLE_AUTH_INSTALLED and "GCP_CREDENTIALS" in st.secrets:
     try:
         creds_json = json.loads(st.secrets["GCP_CREDENTIALS"])
         gcp_project_id = creds_json.get("project_id")
-        
         escopos = [
             'https://www.googleapis.com/auth/cloud-platform',
             'https://www.googleapis.com/auth/spreadsheets',
@@ -145,41 +122,31 @@ if GOOGLE_AUTH_INSTALLED and "GCP_CREDENTIALS" in st.secrets:
     except Exception as e:
         erro_auth = f"Erro ao processar o JSON: {e}"
 
-# --- SECRETS E CONFIGURAÇÕES DE ARMAZENAMENTO ---
 SPREADSHEET_ID = st.secrets.get("SPREADSHEET_ID", None)
 DRIVE_FOLDER_ID = st.secrets.get("DRIVE_FOLDER_ID", None)
-
 ARQUIVO_HISTORICO = "historico_analises.csv"
 ARQUIVO_BLACKLIST = "blacklist_rede.csv"
 
-# --- MÓDULO GOOGLE DRIVE API REST ---
+# --- MÓDULO GOOGLE DRIVE API REST (COM DIAGNÓSTICO) ---
 def upload_para_google_drive(nome_arquivo, file_bytes, mime_type):
-    """Realiza o upload seguro de documentos para a pasta restrita no Google Drive."""
     if not DRIVE_FOLDER_ID or not token_acesso_valido:
-        return False, "ID da pasta do Drive não configurado."
+        return False, "ID da pasta do Drive ou Token GCP não configurado nas Secrets."
     try:
         url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
         headers = {"Authorization": f"Bearer {token_acesso_valido}"}
-        
-        metadata = {
-            "name": nome_arquivo,
-            "parents": [DRIVE_FOLDER_ID]
-        }
-        
+        metadata = {"name": nome_arquivo, "parents": [DRIVE_FOLDER_ID.strip()]}
         files = {
             'data': ('metadata', json.dumps(metadata), 'application/json; charset=UTF-8'),
             'file': (nome_arquivo, file_bytes, mime_type)
         }
-        
         res = requests.post(url, headers=headers, files=files)
         if res.status_code == 200:
-            return True, "Enviado com sucesso ao Drive."
+            return True, "Enviado com sucesso."
         else:
-            return False, f"HTTP {res.status_code}: {res.text}"
+            return False, f"Erro HTTP {res.status_code}: {res.text}"
     except Exception as e:
         return False, str(e)
 
-# --- MÓDULO GOOGLE SHEETS API REST ---
 def append_google_sheet(tab_name, row_values):
     if not SPREADSHEET_ID or not token_acesso_valido:
         return False, "ID da Planilha não configurado."
@@ -209,12 +176,17 @@ def read_google_sheet(tab_name):
         pass
     return None
 
+def atualizar_status_google_sheet(cpf_cnpj, novo_status, parecer_master):
+    if os.path.exists(ARQUIVO_HISTORICO):
+        df_local = pd.read_csv(ARQUIVO_HISTORICO, sep=";")
+        if 'CPF_CNPJ' in df_local.columns:
+            df_local.loc[df_local['CPF_CNPJ'].astype(str) == str(cpf_cnpj), 'Status Decisão'] = novo_status
+            df_local.to_csv(ARQUIVO_HISTORICO, index=False, sep=";", encoding="utf-8-sig")
+
 def carregar_blacklist():
     df_sheets = read_google_sheet("Blacklist")
-    if df_sheets is not None and not df_sheets.empty:
-        return df_sheets
-    if os.path.exists(ARQUIVO_BLACKLIST):
-        return pd.read_csv(ARQUIVO_BLACKLIST, sep=";", dtype=str)
+    if df_sheets is not None and not df_sheets.empty: return df_sheets
+    if os.path.exists(ARQUIVO_BLACKLIST): return pd.read_csv(ARQUIVO_BLACKLIST, sep=";", dtype=str)
     return pd.DataFrame(columns=["Documento", "Nome_Razao", "Motivo_Alerta", "Data_Inclusao", "Cadastrado_Por"])
 
 def salvar_blacklist_local(df):
@@ -222,20 +194,22 @@ def salvar_blacklist_local(df):
 
 def salvar_no_historico(filial, atendente, cliente, doc_cliente, tipo_pessoa, equipamentos_str, valor_total, prazo, parecer_texto):
     data_hora_dt = datetime.now()
-    status = "ANALISADO"
     parecer_up = parecer_texto.upper()
-    if "[APROVADO COM RESTRIÇÃO]" in parecer_up or "RESTRIÇÃO" in parecer_up or "🟡" in parecer_up: 
+    
+    if "[APROVADO COM RESTRIÇÃO]" in parecer_up or "RESTRIÇÃO" in parecer_up or "🟡" in parecer_up:
         status = "APROVADO COM RESTRIÇÃO"
-    elif "[APROVADO]" in parecer_up or "🟢 APROVADO" in parecer_up: 
+    elif "[APROVADO]" in parecer_up or "🟢 APROVADO" in parecer_up:
         status = "APROVADO"
-    elif "[REPROVADO]" in parecer_up or "🔴 REPROVADO" in parecer_up or "NEGADO" in parecer_up: 
-        status = "REPROVADO"
+    elif "[REPROVADO]" in parecer_up or "🔴 REPROVADO" in parecer_up or "NEGADO" in parecer_up:
+        status = "⏳ PENDENTE DE REAVALIAÇÃO MASTER"
+    else:
+        status = "ANALISADO"
 
     row_data = [
         data_hora_dt.strftime("%d/%m/%Y %H:%M:%S"),
         data_hora_dt.strftime("%d/%m/%Y"),
         filial, atendente, cliente, doc_cliente, tipo_pessoa,
-        equipamentos_str, f"R$ {valor_total:,.2f}", prazo, status
+        equipamentos_str, f"R$ {valor_total:,.2f}", prazo, status, parecer_texto
     ]
 
     append_google_sheet("Historico", row_data)
@@ -243,20 +217,18 @@ def salvar_no_historico(filial, atendente, cliente, doc_cliente, tipo_pessoa, eq
     novo_registro = pd.DataFrame([{
         "Data/Hora": row_data[0], "Data_Dia": row_data[1], "Filial": row_data[2], "Atendente": row_data[3],
         "Cliente": row_data[4], "CPF_CNPJ": row_data[5], "Tipo_Pessoa": row_data[6], "Equipamentos": row_data[7],
-        "Valor Reposição Total (R$)": row_data[8], "Prazo": row_data[9], "Status Decisão": row_data[10]
+        "Valor Reposição Total (R$)": row_data[8], "Prazo": row_data[9], "Status Decisão": row_data[10], "Parecer_IA": row_data[11]
     }])
-    if not os.path.exists(ARQUIVO_HISTORICO): 
-        novo_registro.to_csv(ARQUIVO_HISTORICO, index=False, sep=";", encoding="utf-8-sig")
-    else: 
-        novo_registro.to_csv(ARQUIVO_HISTORICO, mode='a', header=False, index=False, sep=";", encoding="utf-8-sig")
+    if not os.path.exists(ARQUIVO_HISTORICO): novo_registro.to_csv(ARQUIVO_HISTORICO, index=False, sep=";", encoding="utf-8-sig")
+    else: novo_registro.to_csv(ARQUIVO_HISTORICO, mode='a', header=False, index=False, sep=";", encoding="utf-8-sig")
 
 # --- GERADOR DE PDF ---
 def formatar_texto_para_reportlab(texto): 
-    t = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', html.escape(texto))
+    t = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', html.escape(str(texto)))
     t = re.sub(r'^#+\s+(.*)', r'<b>\1</b>', t) 
     return t
 
-def gerar_pdf_parecer(nome_cliente, doc_cliente, tipo_pessoa, prazo, loja, equipamentos_str, valor_total, texto_parecer):
+def gerar_pdf_parecer(nome_cliente, doc_cliente, tipo_pessoa, prazo, loja, equipamentos_str, valor_total, texto_parecer, chancela_master=None):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story, styles = [], getSampleStyleSheet()
@@ -270,21 +242,25 @@ def gerar_pdf_parecer(nome_cliente, doc_cliente, tipo_pessoa, prazo, loja, equip
     val_f = f"R$ {valor_total:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
     
     t = Table([
-        [Paragraph("<b>Cliente / CPF-CNPJ:</b>", body_style), Paragraph(f"{html.escape(nome_cliente)} ({doc_cliente}) - {tipo_pessoa}", body_style)],
-        [Paragraph("<b>Prazo Solicitado:</b>", body_style), Paragraph(prazo, body_style)],
-        [Paragraph("<b>Filial / Equipamentos:</b>", body_style), Paragraph(f"{html.escape(loja)}<br/><b>Itens:</b> {html.escape(equipamentos_str)}<br/><b>Total Reposição:</b> {val_f}", body_style)],
+        [Paragraph("<b>Cliente / CPF-CNPJ:</b>", body_style), Paragraph(f"{html.escape(str(nome_cliente))} ({doc_cliente}) - {tipo_pessoa}", body_style)],
+        [Paragraph("<b>Prazo Solicitado:</b>", body_style), Paragraph(str(prazo), body_style)],
+        [Paragraph("<b>Filial / Equipamentos:</b>", body_style), Paragraph(f"{html.escape(str(loja))}<br/><b>Itens:</b> {html.escape(str(equipamentos_str))}<br/><b>Total Reposição:</b> {val_f}", body_style)],
     ], colWidths=[140, 380])
     t.setStyle(TableStyle([('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#F2F4F8')), ('GRID', (0, 0), (-1, -1), 0.5, colors.gray)]))
     story.append(t)
-    story.append(Spacer(1, 15))
+    story.append(Spacer(1, 12))
 
-    for linha in texto_parecer.split('\n'):
+    if chancela_master:
+        story.append(Paragraph(f"<b>👑 AVALIAÇÃO DE CRÉDITO MASTER:</b> {html.escape(chancela_master)}", ParagraphStyle('Master', parent=body_style, textColor=colors.HexColor('#003366'), fontSize=11, leading=15)))
+        story.append(Spacer(1, 10))
+
+    for linha in str(texto_parecer).split('\n'):
         if linha.strip(): story.append(Paragraph(formatar_texto_para_reportlab(linha.strip()), body_style))
     doc.build(story)
     buffer.seek(0)
     return buffer.getvalue()
 
-# --- CATÁLOGO COMPLETO DE EQUIPAMENTOS ---
+# --- CATÁLOGO DE EQUIPAMENTOS ---
 CATALOGO_EQUIPAMENTOS = {
     "ACABADORA GASOLINA": 14000.0, "ANDAIME": 15000.0, "APARADOR BATERIA": 2824.50, "ASPIRADOR": 15000.0,
     "BARRA DE LIGACAO 2.05m": 51.0, "BETONEIRA 120/150L": 2280.0, "BETONEIRA 200/300L": 3800.0,
@@ -316,10 +292,10 @@ CATALOGO_EQUIPAMENTOS = {
     "REGUA VIBRATORIA GASOLINA": 4820.39, "RETIFICADORA": 720.0, "RISCADEIRA": 6000.0, "ROCADEIRA GASOLINA": 2429.19,
     "ROMPEDOR 10KG": 5600.0, "ROMPEDOR 11.8KG": 9150.0, "ROMPEDOR 14.5KG": 11440.0, "ROMPEDOR 16KG": 7900.0,
     "ROMPEDOR 17.3KG": 4100.0, "ROMPEDOR 18.5KG": 7900.0, "ROMPEDOR 27KG": 11700.0, "ROMPEDOR 29.9KG": 23980.0,
-    "ROMPEDOR 31.3KG": 11260.0, "SERRA MADEIRA BATERIA": 6800.0, "SERRA MARMORE 180mm": 3070.0,
-    "SERRA SABRE 18V BATERIA": 12000.0, "SERRA TICO-TICO": 980.0, "SOLDA ELETRICA": 2907.03, "SOPRADOR GASOLINA": 2010.0,
-    "SOPRADOR TERMICO": 850.0, "TALHA ATE 03 TON": 800.0, "TRANSFORMADOR 7000W BIVOLT": 700.0,
-    "TRANSPALET MANUAL ATE 02 TON": 2000.0, "TUPIA": 882.0, "VARREDEIRA MANUAL": 961.31, "VIBRADOR AF 35mm": 3000.0
+    "ROMPEDOR 31.3KG": 11260.0, "SERRA MADEIRA BATERIA": 6800.0, "SERRA MARMORE 180mm": 3070.0, "SERRA SABRE 18V BATERIA": 12000.0,
+    "SERRA TICO-TICO": 980.0, "SOLDA ELETRICA": 2907.03, "SOPRADOR GASOLINA": 2010.0, "SOPRADOR TERMICO": 850.0,
+    "TALHA ATE 03 TON": 800.0, "TRANSFORMADOR 7000W BIVOLT": 700.0, "TRANSPALET MANUAL ATE 02 TON": 2000.0,
+    "TUPIA": 882.0, "VARREDEIRA MANUAL": 961.31, "VIBRADOR AF 35mm": 3000.0
 }
 
 OPCAO_OUTRO_EQUIP = "➕ OUTRO EQUIPAMENTO (Manual)"
@@ -336,20 +312,10 @@ with st.sidebar:
     st.markdown("---")
     
     st.markdown("🔍 **Status do Sistema**")
-    if token_acesso_valido and gcp_project_id:
-        st.success(f"🟢 Nuvem Conectada!\n`{gcp_project_id}`")
-    else:
-        st.error("🔴 JSON GCP ausente nos Secrets.")
-
-    if SPREADSHEET_ID:
-        st.success("🟢 Google Sheets Ativo")
-    else:
-        st.caption("🟡 Sheets não configurado.")
-
-    if DRIVE_FOLDER_ID:
-        st.success("🟢 Google Drive Restrito Ativo")
-    else:
-        st.caption("🟡 Drive não configurado.")
+    if token_acesso_valido and gcp_project_id: st.success(f"🟢 Nuvem Conectada!\n`{gcp_project_id}`")
+    else: st.error("🔴 JSON GCP ausente nos Secrets.")
+    if SPREADSHEET_ID: st.success("🟢 Google Sheets Ativo")
+    if DRIVE_FOLDER_ID: st.success("🟢 Google Drive Restrito Ativo")
 
     st.markdown("---")
     if st.button("🚪 Sair", use_container_width=True):
@@ -358,14 +324,14 @@ with st.sidebar:
 
 # ÁREA CENTRAL
 st.title("🛡️ Central de Risco e Crédito")
-st.caption("Validação inteligente de cadastros, esteira de crédito e proteção antifraude.")
+st.caption("Validação inteligente de cadastros, esteira de crédito e reavaliação de risco.")
 
 # NAVEGAÇÃO DE ABAS
 if eh_master:
-    aba_nova, aba_black, aba_dash, aba_hist = st.tabs(["🚀 Nova Análise", "🚨 Blacklist / Suspeitos", "📊 Dashboard Gerencial", "📋 Histórico Geral"])
+    aba_nova, aba_reaval, aba_black, aba_dash, aba_hist = st.tabs(["🚀 Nova Análise", "⚖️ Reavaliação Master", "🚨 Blacklist / Suspeitos", "📊 Dashboard Gerencial", "📋 Histórico Geral"])
 else:
     aba_nova, aba_hist = st.tabs(["🚀 Nova Análise", "📋 Meu Histórico"])
-    aba_black, aba_dash = None, None
+    aba_reaval, aba_black, aba_dash = None, None, None
 
 # --- ABA 1: NOVA ANÁLISE ---
 with aba_nova:
@@ -394,19 +360,15 @@ with aba_nova:
         with col_a2:
             referencias = ""
             if tipo_cliente == "Pessoa Física (PF)":
-                st.warning("⚠️ **Regra de Crédito PF:** Faturamento a prazo NÃO É PERMITIDO para Pessoa Física. Somente Pagamento Antecipado.")
+                st.warning("⚠️ **Regra de Crédito PF:** Pagamento faturado a prazo NÃO PERMITIDO. Somente Pagamento Antecipado.")
                 forma_pagamento = st.selectbox("Condição de Pagamento Permitida", ["À Vista / Débito / Pix (Antecipado)"])
             else:
-                # ESTEIRA RIGOROSA DE PRAZOS PERMITIDOS
                 forma_pagamento = st.selectbox("💳 Condição de Pagamento Solicitada", ["À Vista / Débito / Pix", "Boleto 7 dias", "Boleto 14 dias", "Boleto 21 dias", "Boleto 28 dias"])
-                
                 if subtipo_pj == "Empresa Padrão (LTDA/SA)":
-                    st.info("📄 **Checklist Documental PJ:**\n- Contrato Social / Requerimento Empresarial\n- CNH do Solicitante com vínculo confirmado")
+                    st.info("📄 **Checklist Documental PJ:**\n- Contrato Social / Requerimento Empresarial\n- CNH do Solicitante com vínculo verificado")
                     referencias = st.text_area("📞 Feedback de Referências Comerciais", placeholder="Descreva os fornecedores consultados...")
                 elif subtipo_pj in ["Condomínio", "MEI"]:
-                    st.warning(f"📄 **Checklist Documental ({subtipo_pj}):**\n- Ata de eleição / Certificado MEI\n- CNH + Comprovante de Residência\n⚠️ **Trava de Crédito:** Faturamento máximo permitido de 7 dias.")
-                    if "Boleto" in forma_pagamento and forma_pagamento != "Boleto 7 dias":
-                        st.error("🚨 ATENÇÃO: MEI e Condomínio autorizam faturamento de no MÁXIMO 7 DIAS. Selecione Boleto 7 dias ou À Vista.")
+                    st.warning(f"📄 **Checklist Documental ({subtipo_pj}):**\n- Ata de eleição / Certificado MEI\n- CNH + Comprovante de Residência\n⚠️ **Limite:** Faturamento máximo de 7 dias.")
 
     with st.container(border=True):
         st.markdown("#### 2️⃣ Equipamento(s) Solicitado(s)")
@@ -447,7 +409,6 @@ with aba_nova:
     if st.button("🚀 INICIAR ANÁLISE DE RISCO E ESTEIRA DE CRÉDITO", type="primary", use_container_width=True):
         doc_limpo = re.sub(r'\D', '', doc_cliente)
         df_black = carregar_blacklist()
-        
         black_match = df_black[df_black['Documento'].str.replace(r'\D', '', regex=True) == doc_limpo] if doc_limpo and not df_black.empty else pd.DataFrame()
         
         if not nome_cliente or not doc_cliente or not equipamentos_selecionados or not documentos:
@@ -455,12 +416,12 @@ with aba_nova:
         elif not black_match.empty:
             motivo = black_match.iloc[0]['Motivo_Alerta']
             origem = black_match.iloc[0]['Cadastrado_Por']
-            st.error(f"🚨 **BLOQUEIO IMEDIATO DE SEGURANÇA (BLACK LIST DA REDE)!**\n\nEste documento **({doc_cliente})** consta na Lista Negra da rede.\n\n**Motivo:** {motivo}\n**Registrado por:** {origem}")
+            st.error(f"🚨 **BLOQUEIO IMEDIATO DE SEGURANÇA (BLACK LIST DA REDE)!**\n\nEste documento **({doc_cliente})** consta na Lista Negra.\n\n**Motivo:** {motivo}\n**Registrado por:** {origem}")
             salvar_no_historico(loja, usr_info['nome'], nome_cliente, doc_cliente, tipo_cliente, ", ".join(lista_nomes_finais), valor_total_reposicao, forma_pagamento, f"🔴 REPROVADO - BLACKLIST: {motivo}")
         elif not token_acesso_valido or not gcp_project_id:
             st.error("❌ Erro de Autenticação na Nuvem. Verifique o painel lateral.")
         else:
-            with st.spinner('A IA (Gemini 2.5 Flash) está processando os documentos e arquivando no Drive restrito...'):
+            with st.spinner('A IA (Gemini 2.5 Flash) está analisando a documentação e registrando a operação...'):
                 try:
                     payload_parts = []
                     data_hoje = datetime.now().strftime("%d-%m-%Y")
@@ -470,10 +431,10 @@ with aba_nova:
                         b64_data = base64.b64encode(file_bytes).decode("utf-8")
                         payload_parts.append({"inlineData": {"mimeType": doc.type, "data": b64_data}})
 
-                        # Salva os documentos enviados na pasta restrita do Google Drive
                         if DRIVE_FOLDER_ID:
-                            nome_arq_drive = f"{data_hoje}_{doc_limpo}_{doc.name}"
-                            upload_para_google_drive(nome_arq_drive, file_bytes, doc.type)
+                            sucesso_d, msg_d = upload_para_google_drive(f"{data_hoje}_{doc_limpo}_{doc.name}", file_bytes, doc.type)
+                            if not sucesso_d:
+                                st.warning(f"⚠️ **Aviso de Upload Drive no arquivo ({doc.name}):** {msg_d}")
 
                     equipamentos_str = ", ".join(lista_nomes_finais)
 
@@ -489,21 +450,21 @@ with aba_nova:
                     - Condição Solicitada: {forma_pagamento}
                     - Feedback Referências: {referencias if referencias else 'Nenhuma informada'}
                     
-                    DIRETRIZES TÉCNICAS E REGRAS DE CRÉDITO (CASA DO CONSTRUTOR):
+                    DIRETRIZES TÉCNICAS E REGRAS DE CRÉDITO:
                     1. LEITURA INTELIGENTE DE DATAS PJ E COMPROVANTES:
-                       - Faturas de energia (CELESC/água) com vencimento em mês futuro mas emitidas recentemente SÃO TOTALMENTE VÁLIDAS.
+                       - Faturas de energia/água com vencimento em mês futuro mas emitidas recentemente SÃO TOTALMENTE VÁLIDAS.
                        - Contratos Sociais e Requerimentos de Empresário NÃO possuem data de validade. São atos constitutivos permanentes.
                        - CNPJ ativo recente (< 1 ano): Faturamento liberado MÁXIMO 7 DIAS.
                        
                     2. ESTEIRA RIGOROSA DE PRAZOS:
                        - Pessoa Física (PF): Pagamento EXCLUSIVAMENTE À vista / PIX antecipado.
-                       - MEI e Condomínio: Faturamento máximo de 7 dias no boleto. Prazos de 14, 21 ou 28 dias DEVEM SER NEGADOS OU ALTERADOS PARA 7 DIAS.
+                       - MEI e Condomínio: Faturamento máximo de 7 dias no boleto.
                        - Empresa LTDA/SA > 1 ano sem restrições no Serasa/Protestos: Aprovado nos prazos solicitados (7, 14, 21 ou 28 dias).
-                       - Presença de Dívidas / Protestos / Processos de Estelionato: REPROVADO para boleto (Permitido somente pagamento À vista).
+                       - Presença de Dívidas / Protestos / Processos de Estelionato: REPROVADO para faturamento.
 
                     3. SINERGIA DAS 14 FASES DA OBRA:
                        - Fases: 1.Canteiro | 2.Fundação | 3.Demolição | 4.Estrutura | 5.Alvenaria | 6.Cobertura | 7.Inst.Hidráulica | 8.Inst.Elétrica | 9.Piso Concreto | 10.Esquadrias | 11.Acabamento | 12.Pintura | 13.Jardinagem | 14.Limpeza.
-                       - Detecte incompatibilidade de itens (Ex: Betoneira + Riscadeira + Aspirador no mesmo contrato para PF). Alerte sobre suspeita de Laranja/Golpe.
+                       - Detecte incompatibilidade de itens e alerte sobre suspeita de Laranja/Golpe.
 
                     4. CONFERÊNCIA DE SEGURANÇA PJ NO BALCÃO:
                        - Exigir validação telefônica no número fixo oficial do Google/Cartão CNPJ ou Ordem de Compra (PO) vinda de e-mail corporativo.
@@ -517,11 +478,11 @@ with aba_nova:
                     
                     **Resumo da Decisão:** (Parecer direto e objetivo)
                     
-                    **Justificativa Técnica e Documental:** (Análise minuciosa de CNPJ, CNH, CND, Serasa e Análise Temporal de Datas)
+                    **Justificativa Técnica e Documental:** (Análise de CNPJ, CNH, CND e Serasa)
                     
                     **Análise de Sinergia dos Equipamentos:** (Coerência com a fase da obra)
                     
-                    **⚠️ Alerta de Segurança Antifraude para o Balcão:** (Instruções obrigatórias para o vendedor conferir na entrega)
+                    **⚠️ Alerta de Segurança Antifraude para o Balcão:** (Instruções para o vendedor)
                     """
                     payload_parts.append({"text": prompt})
 
@@ -538,7 +499,6 @@ with aba_nova:
                         pdf_bytes = gerar_pdf_parecer(nome_cliente, doc_cliente, tipo_cliente, forma_pagamento, loja, equipamentos_str, valor_total_reposicao, texto_resultado)
                         st.session_state['pdf_bytes'] = pdf_bytes
                         
-                        # Salva o PDF do Parecer no Google Drive Restrito
                         if DRIVE_FOLDER_ID:
                             upload_para_google_drive(f"PARECER_{data_hoje}_{doc_limpo}.pdf", pdf_bytes, "application/pdf")
                             
@@ -549,9 +509,8 @@ with aba_nova:
                 except Exception as e:
                     st.error(f"Erro na execução da requisição: {e}")
 
-    # EXIBIÇÃO DO PARECER FORMATADO
     if 'resultado_parecer' in st.session_state and st.session_state['resultado_parecer']:
-        st.success("✅ Avaliação Finalizada!")
+        st.success("✅ Avaliação Processada!")
         st.markdown("<hr>", unsafe_allow_html=True)
         st.markdown(st.session_state['resultado_parecer'], unsafe_allow_html=True)
         st.markdown("<hr>", unsafe_allow_html=True)
@@ -565,7 +524,86 @@ with aba_nova:
                 type="primary"
             )
 
-# --- ABA 2: BLACKLIST DA REDE ---
+# --- ABA 2: REAVALIAÇÃO MASTER (EXCLUSIVA DO GESTOR) ---
+if eh_master and aba_reaval:
+    with aba_reaval:
+        st.markdown("### ⚖️ Painel de Reavaliação de Crédito (Master)")
+        st.caption("Cadastros retidos pela IA para reavaliação da diretoria antes da decisão final.")
+        
+        df_hist_reaval = read_google_sheet("Historico")
+        if df_hist_reaval is None and os.path.exists(ARQUIVO_HISTORICO):
+            df_hist_reaval = pd.read_csv(ARQUIVO_HISTORICO, sep=";")
+
+        if df_hist_reaval is not None and not df_hist_reaval.empty and 'Status Decisão' in df_hist_reaval.columns:
+            pendentes = df_hist_reaval[df_hist_reaval['Status Decisão'].str.contains("PENDENTE|REPROVADO", na=False, case=False)]
+            
+            if not pendentes.empty:
+                st.warning(f"📌 **{len(pendentes)} Cadastros Aguardando Sua Decisão Final**")
+                
+                opcoes_pendentes = [f"{row['Cliente']} | CPF-CNPJ: {row['CPF_CNPJ']} | Filial: {row['Filial']}" for _, row in pendentes.iterrows()]
+                sel_cadastro = st.selectbox("🔍 Selecione o cadastro para reavaliar:", opcoes_pendentes)
+                
+                if sel_cadastro:
+                    idx_sel = opcoes_pendentes.index(sel_cadastro)
+                    dados_cliente = pendentes.iloc[idx_sel]
+                    
+                    with st.container(border=True):
+                        col_r1, col_r2 = st.columns(2)
+                        with col_r1:
+                            st.markdown(f"**👤 Cliente:** {dados_cliente['Cliente']}")
+                            st.markdown(f"**📄 Documento:** {dados_cliente['CPF_CNPJ']}")
+                            st.markdown(f"**🏢 Filial:** {dados_cliente['Filial']}")
+                            st.markdown(f"**👤 Atendente:** {dados_cliente['Atendente']}")
+                        with col_r2:
+                            st.markdown(f"**📦 Equipamento(s):** {dados_cliente['Equipamentos']}")
+                            st.markdown(f"**💵 Reposição Total:** {dados_cliente.get('Valor Reposição Total (R$)', 'N/A')}")
+                            st.markdown(f"**💳 Prazo Solicitado:** {dados_cliente['Prazo']}")
+
+                        if 'Parecer_IA' in dados_cliente and pd.notna(dados_cliente['Parecer_IA']):
+                            with st.expander("🔍 Ver Justificativa Inicial da IA"):
+                                st.markdown(dados_cliente['Parecer_IA'])
+
+                        st.markdown("---")
+                        st.markdown("#### ✍️ Decisão do Gestor Master")
+                        
+                        nova_decisao = st.radio("Selecione o Status Definitivo:", [
+                            "🟢 APROVADO (Pelo Gestor Master)",
+                            "🟡 APROVADO COM RESTRIÇÃO (Pelo Gestor Master)",
+                            "🔴 MANTIDO REPROVADO"
+                        ], horizontal=True)
+                        
+                        justificativa_master = st.text_area("Justificativa Comercial do Master (Ex: Cliente antigo / Garantia negociada):", placeholder="Descreva o motivo da aprovação/manutenção...")
+                        
+                        if st.button("💾 Confirmar Decisão e Notificar Filial", type="primary"):
+                            if not justificativa_master:
+                                st.error("⚠️ Digite a justificativa do gestor antes de confirmar.")
+                            else:
+                                novo_status_str = nova_decisao.split()[1]
+                                if "RESTRIÇÃO" in nova_decisao: novo_status_str = "APROVADO COM RESTRIÇÃO"
+                                
+                                atualizar_status_google_sheet(dados_cliente['CPF_CNPJ'], f"🟢 {novo_status_str} (MASTER)", justificativa_master)
+                                
+                                parecer_original = dados_cliente.get('Parecer_IA', 'Parecer de IA reavaliado.')
+                                pdf_master = gerar_pdf_parecer(
+                                    dados_cliente['Cliente'], dados_cliente['CPF_CNPJ'], 
+                                    dados_cliente.get('Tipo_Pessoa', 'PJ/PF'), dados_cliente['Prazo'], 
+                                    dados_cliente['Filial'], dados_cliente['Equipamentos'], 
+                                    3000.0, parecer_original, 
+                                    chancela_master=f"{nova_decisao} - Motivo: {justificativa_master}"
+                                )
+                                
+                                if DRIVE_FOLDER_ID:
+                                    doc_l = re.sub(r'\D', '', str(dados_cliente['CPF_CNPJ']))
+                                    upload_para_google_drive(f"PARECER_MASTER_{doc_l}.pdf", pdf_master, "application/pdf")
+
+                                st.success("✅ Decisão Master registrada! O status foi atualizado para a filial.")
+                                st.rerun()
+            else:
+                st.success("🎉 Nenhum cadastro pendente de reavaliação no momento!")
+        else:
+            st.info("Nenhum histórico disponível para reavaliação.")
+
+# --- ABA 3: BLACKLIST DA REDE ---
 if eh_master and aba_black:
     with aba_black:
         st.markdown("### 🚨 Cadastro de Documentos Suspeitos (Blacklist da Rede)")
@@ -584,7 +622,6 @@ if eh_master and aba_black:
                 else:
                     dt_hoje = datetime.now().strftime("%d/%m/%Y")
                     df_b = carregar_blacklist()
-                    
                     append_google_sheet("Blacklist", [doc_block.strip(), nome_block.strip(), motivo_block.strip(), dt_hoje, usr_info['nome']])
                     
                     novo_suspeito = pd.DataFrame([{
@@ -600,12 +637,10 @@ if eh_master and aba_black:
         st.markdown("---")
         st.markdown("#### 📋 Suspeitos Cadastrados na Rede")
         df_black_atual = carregar_blacklist()
-        if not df_black_atual.empty:
-            st.dataframe(df_black_atual, use_container_width=True)
-        else:
-            st.info("Nenhum documento cadastrado na Blacklist até o momento.")
+        if not df_black_atual.empty: st.dataframe(df_black_atual, use_container_width=True)
+        else: st.info("Nenhum documento cadastrado na Blacklist até o momento.")
 
-# --- ABA 3: DASHBOARD GERENCIAL & CUSTOS ---
+# --- ABA 4: DASHBOARD GERENCIAL & CUSTOS ---
 if eh_master and aba_dash:
     with aba_dash:
         st.markdown("### 📊 Visão Geral, Indicadores e Custos de Consultas")
@@ -623,29 +658,25 @@ if eh_master and aba_dash:
                 
             total_analises = len(df_hist)
             col_status = 'Status Decisão' if 'Status Decisão' in df_hist.columns else None
-            aprovados = len(df_hist[df_hist[col_status] == 'APROVADO']) if col_status else 0
-            reprovados = len(df_hist[df_hist[col_status] == 'REPROVADO']) if col_status else 0
-            restritos = len(df_hist[df_hist[col_status] == 'APROVADO COM RESTRIÇÃO']) if col_status else 0
+            aprovados = len(df_hist[df_hist[col_status].str.contains("APROVADO", na=False)]) if col_status else 0
+            reprovados = len(df_hist[df_hist[col_status].str.contains("REPROVADO", na=False)]) if col_status else 0
+            restritos = len(df_hist[df_hist[col_status].str.contains("RESTRIÇÃO", na=False)]) if col_status else 0
             
             st.markdown("#### 📌 Volume de Processamento")
             col1, col2, col3, col4 = st.columns(4)
             col1.metric("📌 Total de Cadastros", total_analises)
             col2.metric("✅ Aprovados", aprovados)
-            col3.metric("🔴 Negados", reprovados)
+            col3.metric("🔴 Negados / Retidos", reprovados)
             col4.metric("🟡 Com Restrição", restritos)
             
-            # --- CALCULADORA DE CUSTOS OPERACIONAIS ---
             st.markdown("---")
             st.markdown("#### 💵 Controle Financeiro de Consultas e IA")
             
-            # Cálculo Consult Center (R$ 1,00 até 500 | R$ 3,00 a partir de 501)
-            if total_analises <= 500:
-                custo_consult_center = total_analises * 1.00
-            else:
-                custo_consult_center = (500 * 1.00) + ((total_analises - 500) * 3.00)
+            if total_analises <= 500: custo_consult_center = total_analises * 1.00
+            else: custo_consult_center = (500 * 1.00) + ((total_analises - 500) * 3.00)
                 
             custo_spc = total_analises * 2.84
-            custo_gemini_ia = total_analises * 0.03  # Média estimada de R$ 0,03 por requisição Vertex AI
+            custo_gemini_ia = total_analises * 0.03
             
             custo_total_acumulado = custo_consult_center + custo_spc + custo_gemini_ia
             custo_medio_por_cadastro = custo_total_acumulado / total_analises if total_analises > 0 else 0.0
@@ -664,7 +695,7 @@ if eh_master and aba_dash:
         else:
             st.info("Aguardando os primeiros cadastros para gerar o Dashboard.")
 
-# --- ABA 4: HISTÓRICO GERAL ---
+# --- ABA 5: HISTÓRICO GERAL ---
 with aba_hist:
     st.markdown("### 📋 Registro Geral de Auditoria")
     df_hist_all = read_google_sheet("Historico")
