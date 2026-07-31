@@ -4,6 +4,7 @@ import io
 import html
 import re
 import os
+import csv
 import requests
 import pandas as pd
 import json
@@ -127,10 +128,10 @@ DRIVE_FOLDER_ID = st.secrets.get("DRIVE_FOLDER_ID", None)
 ARQUIVO_HISTORICO = "historico_analises.csv"
 ARQUIVO_BLACKLIST = "blacklist_rede.csv"
 
-# --- MÓDULO GOOGLE DRIVE API REST (COM DIAGNÓSTICO) ---
+# --- MÓDULOS DE INTEGRAÇÃO GOOGLE ---
 def upload_para_google_drive(nome_arquivo, file_bytes, mime_type):
     if not DRIVE_FOLDER_ID or not token_acesso_valido:
-        return False, "ID da pasta do Drive ou Token GCP não configurado nas Secrets."
+        return False, "ID da pasta do Drive ou Token GCP não configurado."
     try:
         url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
         headers = {"Authorization": f"Bearer {token_acesso_valido}"}
@@ -177,24 +178,54 @@ def read_google_sheet(tab_name):
     return None
 
 def atualizar_status_google_sheet(cpf_cnpj, novo_status, parecer_master):
+    """Atualização segura no CSV local e no Google Sheets sem dar crash."""
+    doc_busca = str(cpf_cnpj).strip()
+    
+    # 1. Atualizar arquivo CSV local
     if os.path.exists(ARQUIVO_HISTORICO):
-        df_local = pd.read_csv(ARQUIVO_HISTORICO, sep=";")
-        if 'CPF_CNPJ' in df_local.columns:
-            df_local.loc[df_local['CPF_CNPJ'].astype(str) == str(cpf_cnpj), 'Status Decisão'] = novo_status
-            df_local.to_csv(ARQUIVO_HISTORICO, index=False, sep=";", encoding="utf-8-sig")
+        try:
+            df_local = pd.read_csv(ARQUIVO_HISTORICO, sep=";", on_bad_lines='skip', engine='python')
+            if 'CPF_CNPJ' in df_local.columns:
+                df_local['CPF_CNPJ'] = df_local['CPF_CNPJ'].astype(str).str.strip()
+                mask = df_local['CPF_CNPJ'] == doc_busca
+                if mask.any():
+                    df_local.loc[mask, 'Status Decisão'] = novo_status
+                    df_local.to_csv(ARQUIVO_HISTORICO, index=False, sep=";", encoding="utf-8-sig", quoting=csv.QUOTE_ALL)
+        except Exception:
+            pass
+
+    # 2. Atualizar na aba Historico do Google Sheets se configurado
+    if SPREADSHEET_ID and token_acesso_valido:
+        try:
+            df_sheets = read_google_sheet("Historico")
+            if df_sheets is not None and not df_sheets.empty and 'CPF_CNPJ' in df_sheets.columns:
+                df_sheets['CPF_CNPJ'] = df_sheets['CPF_CNPJ'].astype(str).str.strip()
+                matches = df_sheets.index[df_sheets['CPF_CNPJ'] == doc_busca].tolist()
+                if matches:
+                    row_idx = matches[-1] + 2  # Linha correspondente na planilha
+                    url = f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}/values/Historico!K{row_idx}?valueInputOption=USER_ENTERED"
+                    headers = {"Authorization": f"Bearer {token_acesso_valido}", "Content-Type": "application/json"}
+                    body = {"values": [[novo_status]]}
+                    requests.put(url, headers=headers, json=body)
+        except Exception:
+            pass
 
 def carregar_blacklist():
     df_sheets = read_google_sheet("Blacklist")
     if df_sheets is not None and not df_sheets.empty: return df_sheets
-    if os.path.exists(ARQUIVO_BLACKLIST): return pd.read_csv(ARQUIVO_BLACKLIST, sep=";", dtype=str)
+    if os.path.exists(ARQUIVO_HISTORICO):
+        try:
+            return pd.read_csv(ARQUIVO_BLACKLIST, sep=";", dtype=str, on_bad_lines='skip', engine='python')
+        except Exception:
+            pass
     return pd.DataFrame(columns=["Documento", "Nome_Razao", "Motivo_Alerta", "Data_Inclusao", "Cadastrado_Por"])
 
 def salvar_blacklist_local(df):
-    df.to_csv(ARQUIVO_BLACKLIST, index=False, sep=";", encoding="utf-8-sig")
+    df.to_csv(ARQUIVO_BLACKLIST, index=False, sep=";", encoding="utf-8-sig", quoting=csv.QUOTE_ALL)
 
 def salvar_no_historico(filial, atendente, cliente, doc_cliente, tipo_pessoa, equipamentos_str, valor_total, prazo, parecer_texto):
     data_hora_dt = datetime.now()
-    parecer_up = parecer_texto.upper()
+    parecer_up = str(parecer_texto).upper()
     
     if "[APROVADO COM RESTRIÇÃO]" in parecer_up or "RESTRIÇÃO" in parecer_up or "🟡" in parecer_up:
         status = "APROVADO COM RESTRIÇÃO"
@@ -219,8 +250,10 @@ def salvar_no_historico(filial, atendente, cliente, doc_cliente, tipo_pessoa, eq
         "Cliente": row_data[4], "CPF_CNPJ": row_data[5], "Tipo_Pessoa": row_data[6], "Equipamentos": row_data[7],
         "Valor Reposição Total (R$)": row_data[8], "Prazo": row_data[9], "Status Decisão": row_data[10], "Parecer_IA": row_data[11]
     }])
-    if not os.path.exists(ARQUIVO_HISTORICO): novo_registro.to_csv(ARQUIVO_HISTORICO, index=False, sep=";", encoding="utf-8-sig")
-    else: novo_registro.to_csv(ARQUIVO_HISTORICO, mode='a', header=False, index=False, sep=";", encoding="utf-8-sig")
+    if not os.path.exists(ARQUIVO_HISTORICO): 
+        novo_registro.to_csv(ARQUIVO_HISTORICO, index=False, sep=";", encoding="utf-8-sig", quoting=csv.QUOTE_ALL)
+    else: 
+        novo_registro.to_csv(ARQUIVO_HISTORICO, mode='a', header=False, index=False, sep=";", encoding="utf-8-sig", quoting=csv.QUOTE_ALL)
 
 # --- GERADOR DE PDF ---
 def formatar_texto_para_reportlab(texto): 
@@ -532,10 +565,13 @@ if eh_master and aba_reaval:
         
         df_hist_reaval = read_google_sheet("Historico")
         if df_hist_reaval is None and os.path.exists(ARQUIVO_HISTORICO):
-            df_hist_reaval = pd.read_csv(ARQUIVO_HISTORICO, sep=";")
+            try:
+                df_hist_reaval = pd.read_csv(ARQUIVO_HISTORICO, sep=";", on_bad_lines='skip', engine='python')
+            except Exception:
+                df_hist_reaval = None
 
         if df_hist_reaval is not None and not df_hist_reaval.empty and 'Status Decisão' in df_hist_reaval.columns:
-            pendentes = df_hist_reaval[df_hist_reaval['Status Decisão'].str.contains("PENDENTE|REPROVADO", na=False, case=False)]
+            pendentes = df_hist_reaval[df_hist_reaval['Status Decisão'].astype(str).str.contains("PENDENTE|REPROVADO", na=False, case=False)]
             
             if not pendentes.empty:
                 st.warning(f"📌 **{len(pendentes)} Cadastros Aguardando Sua Decisão Final**")
@@ -647,7 +683,10 @@ if eh_master and aba_dash:
         
         df_hist = read_google_sheet("Historico")
         if df_hist is None and os.path.exists(ARQUIVO_HISTORICO):
-            df_hist = pd.read_csv(ARQUIVO_HISTORICO, sep=";")
+            try:
+                df_hist = pd.read_csv(ARQUIVO_HISTORICO, sep=";", on_bad_lines='skip', engine='python')
+            except Exception:
+                df_hist = None
             
         if df_hist is not None and not df_hist.empty and 'Filial' in df_hist.columns:
             lojas_disponiveis = ["Todas as Lojas"] + sorted(list(df_hist['Filial'].dropna().unique()))
@@ -658,9 +697,9 @@ if eh_master and aba_dash:
                 
             total_analises = len(df_hist)
             col_status = 'Status Decisão' if 'Status Decisão' in df_hist.columns else None
-            aprovados = len(df_hist[df_hist[col_status].str.contains("APROVADO", na=False)]) if col_status else 0
-            reprovados = len(df_hist[df_hist[col_status].str.contains("REPROVADO", na=False)]) if col_status else 0
-            restritos = len(df_hist[df_hist[col_status].str.contains("RESTRIÇÃO", na=False)]) if col_status else 0
+            aprovados = len(df_hist[df_hist[col_status].astype(str).str.contains("APROVADO", na=False)]) if col_status else 0
+            reprovados = len(df_hist[df_hist[col_status].astype(str).str.contains("REPROVADO|PENDENTE", na=False)]) if col_status else 0
+            restritos = len(df_hist[df_hist[col_status].astype(str).str.contains("RESTRIÇÃO", na=False)]) if col_status else 0
             
             st.markdown("#### 📌 Volume de Processamento")
             col1, col2, col3, col4 = st.columns(4)
@@ -700,7 +739,10 @@ with aba_hist:
     st.markdown("### 📋 Registro Geral de Auditoria")
     df_hist_all = read_google_sheet("Historico")
     if df_hist_all is None and os.path.exists(ARQUIVO_HISTORICO):
-        df_hist_all = pd.read_csv(ARQUIVO_HISTORICO, sep=";")
+        try:
+            df_hist_all = pd.read_csv(ARQUIVO_HISTORICO, sep=";", on_bad_lines='skip', engine='python')
+        except Exception:
+            df_hist_all = None
         
     if df_hist_all is not None and not df_hist_all.empty:
         if not eh_master and 'Filial' in df_hist_all.columns:
