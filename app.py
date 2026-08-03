@@ -114,7 +114,7 @@ if GOOGLE_AUTH_INSTALLED and "GCP_CREDENTIALS" in st.secrets:
         escopos = [
             'https://www.googleapis.com/auth/cloud-platform',
             'https://www.googleapis.com/auth/spreadsheets',
-            'https://www.googleapis.com/auth/drive.file'
+            'https://www.googleapis.com/auth/drive'
         ]
         credenciais = service_account.Credentials.from_service_account_info(creds_json, scopes=escopos)
         req_auth = GoogleAuthRequest()
@@ -133,7 +133,7 @@ def upload_para_google_drive(nome_arquivo, file_bytes, mime_type):
     if not DRIVE_FOLDER_ID or not token_acesso_valido:
         return False, "ID da pasta do Drive ou Token GCP não configurado."
     try:
-        url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart"
+        url = "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true"
         headers = {"Authorization": f"Bearer {token_acesso_valido}"}
         metadata = {"name": nome_arquivo, "parents": [DRIVE_FOLDER_ID.strip()]}
         files = {
@@ -162,26 +162,89 @@ def append_google_sheet(tab_name, row_values):
         return False, str(e)
 
 def read_google_sheet(tab_name):
+    """Lê dados do Google Sheets localizando o cabeçalho dinamicamente."""
     if not SPREADSHEET_ID or not token_acesso_valido:
         return None
     try:
         tab_encoded = urllib.parse.quote(tab_name)
-        url = f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}/values/{tab_encoded}!A1:Z5000"
+        url = f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}/values/{tab_encoded}!A1:Z"
         headers = {"Authorization": f"Bearer {token_acesso_valido}"}
         res = requests.get(url, headers=headers)
         if res.status_code == 200:
             vals = res.json().get("values", [])
             if len(vals) > 1:
-                return pd.DataFrame(vals[1:], columns=vals[0])
+                header_idx = 0
+                for i, r in enumerate(vals[:5]):
+                    r_str = [str(x).upper() for x in r]
+                    if any(k in r_str for k in ["CLIENTE", "CPF_CNPJ", "FILIAL", "DATA/HORA"]):
+                        header_idx = i
+                        break
+                cols = [str(c).strip() for c in vals[header_idx]]
+                num_cols = len(cols)
+                rows_padded = []
+                for r in vals[header_idx+1:]:
+                    if not any(r): continue
+                    padded = r + [''] * (num_cols - len(r)) if len(r) < num_cols else r[:num_cols]
+                    rows_padded.append(padded)
+                return pd.DataFrame(rows_padded, columns=cols)
     except Exception:
         pass
     return None
 
+def obter_historico_completo():
+    """Unifica o histórico do Google Sheets e do CSV Local, recuperando 100% dos cadastros."""
+    dfs = []
+    
+    # 1. Tenta ler do Google Sheets
+    df_sheets = read_google_sheet("Historico")
+    if df_sheets is not None and not df_sheets.empty:
+        dfs.append(df_sheets)
+        
+    # 2. Tenta ler do CSV Local de backup
+    if os.path.exists(ARQUIVO_HISTORICO):
+        try:
+            df_csv = pd.read_csv(ARQUIVO_HISTORICO, sep=";", on_bad_lines='skip', engine='python', dtype=str)
+            if df_csv is not None and not df_csv.empty:
+                dfs.append(df_csv)
+        except Exception:
+            pass
+            
+    if not dfs:
+        return None
+        
+    df_total = pd.concat(dfs, ignore_index=True)
+    
+    # Mapeamento e normalização de colunas
+    column_mapping = {
+        'CPF/CNPJ': 'CPF_CNPJ',
+        'CPF': 'CPF_CNPJ',
+        'CNPJ': 'CPF_CNPJ',
+        'Status': 'Status Decisão',
+        'Status Decisao': 'Status Decisão',
+        'Data': 'Data_Dia',
+        'Data Hora': 'Data/Hora',
+        'Data/Hora ': 'Data/Hora'
+    }
+    df_total.rename(columns=lambda x: column_mapping.get(str(x).strip(), str(x).strip()), inplace=True)
+    
+    # Limpa colunas sem nome
+    df_total = df_total.loc[:, ~df_total.columns.str.contains('^Unnamed')]
+    
+    for col in df_total.columns:
+        df_total[col] = df_total[col].astype(str).str.strip()
+        
+    # Remove duplicatas preservando o histórico único
+    subset_cols = [c for c in ['Data/Hora', 'CPF_CNPJ'] if c in df_total.columns]
+    if subset_cols:
+        df_total.drop_duplicates(subset=subset_cols, keep='first', inplace=True)
+    else:
+        df_total.drop_duplicates(inplace=True)
+        
+    return df_total
+
 def atualizar_status_google_sheet(cpf_cnpj, novo_status, parecer_master):
-    """Atualização segura no CSV local e no Google Sheets."""
     doc_busca = str(cpf_cnpj).strip()
     
-    # 1. Atualizar arquivo CSV local
     if os.path.exists(ARQUIVO_HISTORICO):
         try:
             df_local = pd.read_csv(ARQUIVO_HISTORICO, sep=";", on_bad_lines='skip', engine='python')
@@ -194,7 +257,6 @@ def atualizar_status_google_sheet(cpf_cnpj, novo_status, parecer_master):
         except Exception:
             pass
 
-    # 2. Atualizar na aba Historico do Google Sheets se configurado
     if SPREADSHEET_ID and token_acesso_valido:
         try:
             df_sheets = read_google_sheet("Historico")
@@ -557,18 +619,13 @@ with aba_nova:
                 type="primary"
             )
 
-# --- ABA 2: REAVALIAÇÃO MASTER (EXCLUSIVA DO GESTOR - BLINDADA) ---
+# --- ABA 2: REAVALIAÇÃO MASTER (EXCLUSIVA DO GESTOR - UNIFICADA) ---
 if eh_master and aba_reaval:
     with aba_reaval:
         st.markdown("### ⚖️ Painel de Reavaliação de Crédito (Master)")
         st.caption("Cadastros retidos pela IA para reavaliação da diretoria antes da decisão final.")
         
-        df_hist_reaval = read_google_sheet("Historico")
-        if df_hist_reaval is None and os.path.exists(ARQUIVO_HISTORICO):
-            try:
-                df_hist_reaval = pd.read_csv(ARQUIVO_HISTORICO, sep=";", on_bad_lines='skip', engine='python')
-            except Exception:
-                df_hist_reaval = None
+        df_hist_reaval = obter_historico_completo()
 
         if df_hist_reaval is not None and not df_hist_reaval.empty and 'Status Decisão' in df_hist_reaval.columns:
             pendentes = df_hist_reaval[df_hist_reaval['Status Decisão'].astype(str).str.contains("PENDENTE|REPROVADO", na=False, case=False)]
@@ -576,16 +633,19 @@ if eh_master and aba_reaval:
             if not pendentes.empty:
                 st.warning(f"📌 **{len(pendentes)} Cadastros Aguardando Sua Decisão Final**")
                 
-                # Montagem segura com .get() para evitar KeyError
-                opcoes_pendentes = [
-                    f"{row.get('Cliente', 'Sem Nome')} | CPF-CNPJ: {row.get('CPF_CNPJ', 'N/A')} | Filial: {row.get('Filial', 'N/A')}" 
-                    for _, row in pendentes.iterrows()
-                ]
+                opcoes_pendentes = []
+                for _, row in pendentes.iterrows():
+                    row_dict = row.to_dict()
+                    cli = row_dict.get('Cliente', 'Sem Nome')
+                    doc = row_dict.get('CPF_CNPJ', 'N/A')
+                    fil = row_dict.get('Filial', 'N/A')
+                    opcoes_pendentes.append(f"{cli} | CPF-CNPJ: {doc} | Filial: {fil}")
+                
                 sel_cadastro = st.selectbox("🔍 Selecione o cadastro para reavaliar:", opcoes_pendentes)
                 
                 if sel_cadastro:
                     idx_sel = opcoes_pendentes.index(sel_cadastro)
-                    dados_cliente = pendentes.iloc[idx_sel]
+                    dados_cliente = pendentes.iloc[idx_sel].to_dict()
                     
                     with st.container(border=True):
                         col_r1, col_r2 = st.columns(2)
@@ -599,7 +659,7 @@ if eh_master and aba_reaval:
                             st.markdown(f"**💵 Reposição Total:** {dados_cliente.get('Valor Reposição Total (R$)', 'N/A')}")
                             st.markdown(f"**💳 Prazo Solicitado:** {dados_cliente.get('Prazo', 'N/A')}")
 
-                        if 'Parecer_IA' in dados_cliente and pd.notna(dados_cliente['Parecer_IA']):
+                        if dados_cliente.get('Parecer_IA'):
                             with st.expander("🔍 Ver Justificativa Inicial da IA"):
                                 st.markdown(dados_cliente['Parecer_IA'])
 
@@ -681,20 +741,15 @@ if eh_master and aba_black:
         if not df_black_atual.empty: st.dataframe(df_black_atual, use_container_width=True)
         else: st.info("Nenhum documento cadastrado na Blacklist até o momento.")
 
-# --- ABA 4: DASHBOARD GERENCIAL & CUSTOS ---
+# --- ABA 4: DASHBOARD GERENCIAL & CUSTOS (UNIFICADO E SEM PERDAS) ---
 if eh_master and aba_dash:
     with aba_dash:
         st.markdown("### 📊 Visão Geral, Indicadores e Custos de Consultas")
         
-        df_hist = read_google_sheet("Historico")
-        if df_hist is None and os.path.exists(ARQUIVO_HISTORICO):
-            try:
-                df_hist = pd.read_csv(ARQUIVO_HISTORICO, sep=";", on_bad_lines='skip', engine='python')
-            except Exception:
-                df_hist = None
+        df_hist = obter_historico_completo()
             
         if df_hist is not None and not df_hist.empty and 'Filial' in df_hist.columns:
-            lojas_disponiveis = ["Todas as Lojas"] + sorted(list(df_hist['Filial'].dropna().unique()))
+            lojas_disponiveis = ["Todas as Lojas"] + sorted([str(x) for x in df_hist['Filial'].unique() if str(x) != 'nan' and str(x).strip() != ''])
             filtro_loja = st.selectbox("🎯 Filtrar Unidade:", lojas_disponiveis)
             
             if filtro_loja != "Todas as Lojas":
@@ -702,9 +757,18 @@ if eh_master and aba_dash:
                 
             total_analises = len(df_hist)
             col_status = 'Status Decisão' if 'Status Decisão' in df_hist.columns else None
-            aprovados = len(df_hist[df_hist[col_status].astype(str).str.contains("APROVADO", na=False)]) if col_status else 0
-            reprovados = len(df_hist[df_hist[col_status].astype(str).str.contains("REPROVADO|PENDENTE", na=False)]) if col_status else 0
-            restritos = len(df_hist[df_hist[col_status].astype(str).str.contains("RESTRIÇÃO", na=False)]) if col_status else 0
+            
+            if col_status:
+                status_series = df_hist[col_status].astype(str)
+                restritos_mask = status_series.str.contains("RESTRIÇÃO|RESTRICAO", na=False, case=False)
+                aprovados_mask = status_series.str.contains("APROVADO|🟢", na=False, case=False) & ~restritos_mask
+                reprovados_mask = status_series.str.contains("REPROVADO|PENDENTE|NEGADO|🔴|⏳", na=False, case=False)
+                
+                aprovados = len(df_hist[aprovados_mask])
+                restritos = len(df_hist[restritos_mask])
+                reprovados = len(df_hist[reprovados_mask])
+            else:
+                aprovados, restritos, reprovados = 0, 0, 0
             
             st.markdown("#### 📌 Volume de Processamento")
             col1, col2, col3, col4 = st.columns(4)
@@ -739,15 +803,10 @@ if eh_master and aba_dash:
         else:
             st.info("Aguardando os primeiros cadastros para gerar o Dashboard.")
 
-# --- ABA 5: HISTÓRICO GERAL ---
+# --- ABA 5: HISTÓRICO GERAL (UNIFICADO) ---
 with aba_hist:
     st.markdown("### 📋 Registro Geral de Auditoria")
-    df_hist_all = read_google_sheet("Historico")
-    if df_hist_all is None and os.path.exists(ARQUIVO_HISTORICO):
-        try:
-            df_hist_all = pd.read_csv(ARQUIVO_HISTORICO, sep=";", on_bad_lines='skip', engine='python')
-        except Exception:
-            df_hist_all = None
+    df_hist_all = obter_historico_completo()
         
     if df_hist_all is not None and not df_hist_all.empty:
         if not eh_master and 'Filial' in df_hist_all.columns:
