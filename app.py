@@ -162,7 +162,6 @@ def append_google_sheet(tab_name, row_values):
         return False, str(e)
 
 def read_google_sheet(tab_name):
-    """Lê dados do Google Sheets localizando o cabeçalho dinamicamente."""
     if not SPREADSHEET_ID or not token_acesso_valido:
         return None
     try:
@@ -192,15 +191,11 @@ def read_google_sheet(tab_name):
     return None
 
 def obter_historico_completo():
-    """Unifica o histórico do Google Sheets e do CSV Local, recuperando 100% dos cadastros."""
     dfs = []
-    
-    # 1. Tenta ler do Google Sheets
     df_sheets = read_google_sheet("Historico")
     if df_sheets is not None and not df_sheets.empty:
         dfs.append(df_sheets)
         
-    # 2. Tenta ler do CSV Local de backup
     if os.path.exists(ARQUIVO_HISTORICO):
         try:
             df_csv = pd.read_csv(ARQUIVO_HISTORICO, sep=";", on_bad_lines='skip', engine='python', dtype=str)
@@ -213,32 +208,20 @@ def obter_historico_completo():
         return None
         
     df_total = pd.concat(dfs, ignore_index=True)
-    
-    # Mapeamento e normalização de colunas
     column_mapping = {
-        'CPF/CNPJ': 'CPF_CNPJ',
-        'CPF': 'CPF_CNPJ',
-        'CNPJ': 'CPF_CNPJ',
-        'Status': 'Status Decisão',
-        'Status Decisao': 'Status Decisão',
-        'Data': 'Data_Dia',
-        'Data Hora': 'Data/Hora',
-        'Data/Hora ': 'Data/Hora'
+        'CPF/CNPJ': 'CPF_CNPJ', 'CPF': 'CPF_CNPJ', 'CNPJ': 'CPF_CNPJ',
+        'Status': 'Status Decisão', 'Status Decisao': 'Status Decisão',
+        'Data': 'Data_Dia', 'Data Hora': 'Data/Hora', 'Data/Hora ': 'Data/Hora'
     }
     df_total.rename(columns=lambda x: column_mapping.get(str(x).strip(), str(x).strip()), inplace=True)
-    
-    # Limpa colunas sem nome
     df_total = df_total.loc[:, ~df_total.columns.str.contains('^Unnamed')]
     
     for col in df_total.columns:
         df_total[col] = df_total[col].astype(str).str.strip()
         
-    # Remove duplicatas preservando o histórico único
     subset_cols = [c for c in ['Data/Hora', 'CPF_CNPJ'] if c in df_total.columns]
-    if subset_cols:
-        df_total.drop_duplicates(subset=subset_cols, keep='first', inplace=True)
-    else:
-        df_total.drop_duplicates(inplace=True)
+    if subset_cols: df_total.drop_duplicates(subset=subset_cols, keep='first', inplace=True)
+    else: df_total.drop_duplicates(inplace=True)
         
     return df_total
 
@@ -519,7 +502,8 @@ with aba_nova:
             with st.spinner('A IA (Gemini 2.5 Flash) está analisando a documentação e registrando a operação...'):
                 try:
                     payload_parts = []
-                    data_hoje = datetime.now().strftime("%d-%m-%Y")
+                    data_hoje = datetime.now().strftime("%d/%m/%Y")
+                    mes_atual = datetime.now().strftime("%B %Y")
                     
                     for doc in documentos:
                         file_bytes = doc.getvalue()
@@ -527,15 +511,18 @@ with aba_nova:
                         payload_parts.append({"inlineData": {"mimeType": doc.type, "data": b64_data}})
 
                         if DRIVE_FOLDER_ID:
-                            sucesso_d, msg_d = upload_para_google_drive(f"{data_hoje}_{doc_limpo}_{doc.name}", file_bytes, doc.type)
+                            sucesso_d, msg_d = upload_para_google_drive(f"{data_hoje.replace('/','-')}_{doc_limpo}_{doc.name}", file_bytes, doc.type)
                             if not sucesso_d:
                                 st.warning(f"⚠️ **Aviso de Upload Drive no arquivo ({doc.name}):** {msg_d}")
 
                     equipamentos_str = ", ".join(lista_nomes_finais)
 
+                    # PROMPT ENGINE 2.0 - MENTE DO ANALISTA IMPLACÁVEL
                     prompt = f"""
-                    Você é o Analista Master de Risco Financeiro, Antifraude e Engenharia da Casa do Construtor.
-                    
+                    Você é um Analista Sênior de Crédito e Antifraude extremamente rigoroso da Casa do Construtor.
+                    Sua missão é analisar os documentos anexados e emitir um parecer preciso, equilibrando segurança corporativa e aprovação comercial.
+                    DATA DE HOJE PARA REFERÊNCIA DE VALIDADE: {data_hoje} ({mes_atual})
+
                     DADOS DA OPERAÇÃO:
                     - Cliente: {nome_cliente} (CPF/CNPJ: {doc_cliente})
                     - Natureza: {tipo_cliente} ({subtipo_pj if subtipo_pj else 'Pessoa Física'})
@@ -543,41 +530,51 @@ with aba_nova:
                     - Equipamento(s): {equipamentos_str}
                     - Valor Total de Reposição Risco: R$ {valor_total_reposicao:,.2f}
                     - Condição Solicitada: {forma_pagamento}
-                    - Feedback Referências: {referencias if referencias else 'Nenhuma informada'}
                     
-                    DIRETRIZES TÉCNICAS E REGRAS DE CRÉDITO:
-                    1. LEITURA INTELIGENTE DE DATAS PJ E COMPROVANTES:
-                       - Faturas de energia/água com vencimento em mês futuro mas emitidas recentemente SÃO TOTALMENTE VÁLIDAS.
-                       - Contratos Sociais e Requerimentos de Empresário NÃO possuem data de validade. São atos constitutivos permanentes.
-                       - CNPJ ativo recente (< 1 ano): Faturamento liberado MÁXIMO 7 DIAS.
-                       
-                    2. ESTEIRA RIGOROSA DE PRAZOS:
-                       - Pessoa Física (PF): Pagamento EXCLUSIVAMENTE À vista / PIX antecipado.
-                       - MEI e Condomínio: Faturamento máximo de 7 dias no boleto.
-                       - Empresa LTDA/SA > 1 ano sem restrições no Serasa/Protestos: Aprovado nos prazos solicitados (7, 14, 21 ou 28 dias).
-                       - Presença de Dívidas / Protestos / Processos de Estelionato: REPROVADO para faturamento.
+                    REGRA 0: DOCUMENTAÇÃO OBRIGATÓRIA (FALHA AUTOMÁTICA)
+                    - Você DEVE obrigatoriamente verificar as imagens/PDFs anexados.
+                    - Se o usuário enviou APENAS relatórios do Serasa/SPC/Consult Center e NÃO há nenhuma foto de Documento de Identidade (CNH ou RG com CPF) E nenhum Comprovante de Residência -> O PARECER DEVE SER IMEDIATAMENTE "🔴 REPROVADO". Motivo: Documentação incompleta (falta CNH e Comprovante). Não invente dados nem aprove sem ver a foto real do documento.
 
-                    3. SINERGIA DAS 14 FASES DA OBRA:
-                       - Fases: 1.Canteiro | 2.Fundação | 3.Demolição | 4.Estrutura | 5.Alvenaria | 6.Cobertura | 7.Inst.Hidráulica | 8.Inst.Elétrica | 9.Piso Concreto | 10.Esquadrias | 11.Acabamento | 12.Pintura | 13.Jardinagem | 14.Limpeza.
-                       - Detecte incompatibilidade de itens e alerte sobre suspeita de Laranja/Golpe.
+                    REGRA 1: VALIDAÇÃO DO COMPROVANTE DE RESIDÊNCIA (PF)
+                    - O comprovante de residência deve ter no MÁXIMO 3 meses de emissão em relação a hoje ({mes_atual}). Faturas a vencer no próximo mês ou emitidas recentemente são 100% VÁLIDAS.
+                    - Faturas de Cartão de Crédito são aceitas (respeitando a regra dos 3 meses).
+                    - Titularidade: O comprovante deve estar no nome exato do cliente. EXCEÇÃO: Para equipamentos de baixo valor de risco, aceita-se no nome do Pai ou da Mãe (você deve conferir a filiação no RG/CNH anexado).
+                    - Contratos de Locação (Aluguel): SÓ SÃO VÁLIDOS se estiverem registrados em cartório, com data atual, E acompanhados de uma conta de consumo no nome do proprietário do imóvel (locador).
 
-                    4. CONFERÊNCIA DE SEGURANÇA PJ NO BALCÃO:
-                       - Exigir validação telefônica no número fixo oficial do Google/Cartão CNPJ ou Ordem de Compra (PO) vinda de e-mail corporativo.
+                    REGRA 2: ANÁLISE DE RESTRIÇÕES E CRÉDITO (SPC/SERASA)
+                    - O cliente NÃO precisa ter nome 100% limpo. Você deve analisar a ORIGEM da dívida.
+                    - Restrições TOLERADAS (Aprove): Financiamento de Bancos Comerciais, Lojas de Varejo (ex: Havan, Renner), Telecomunicações (Claro, Vivo, Tim, Oi), Contas de consumo básicas atrasadas.
+                    - Restrições GRAVES (Reprove imediatamente para faturamento): Dívidas com lojas de Materiais de Construção, Locadoras de Equipamentos, Dívidas de Aluguel/Imobiliárias, Cheques sem fundo repetitivos, ou Estelionato. Sinergia negativa com o nosso setor de atuação = Risco Alto.
 
-                    FORMATO DA RESPOSTA (Use marcadores visuais e títulos grandes #):
-                    
+                    REGRA 3: PRAZOS E CONDIÇÕES DE PAGAMENTO (INEGOCIÁVEL)
+                    - Pessoa Física (PF): Pagamento EXCLUSIVAMENTE À Vista / PIX Antecipado. Boleto NUNCA é permitido para PF.
+                    - Empresa (PJ) < 1 ano de abertura: Boleto no máximo 7 dias.
+                    - MEI e Condomínio: Boleto no máximo 7 dias.
+                    - Empresa Padrão (LTDA/SA) > 1 ano de abertura (sem restrições graves no setor): Pode aprovar para os prazos solicitados (7, 14, 21 ou 28 dias).
+
+                    REGRA 4: DOCUMENTAÇÃO PJ
+                    - Contratos Sociais e Requerimentos de Empresário NÃO possuem data de validade (são históricos).
+
+                    REGRA 5: SINERGIA DAS 14 FASES DA OBRA E RISCO DE "LARANJA"
+                    - Fases: 1.Canteiro | 2.Fundação | 3.Demolição | 4.Estrutura | 5.Alvenaria | 6.Cobertura | 7.Inst.Hidráulica | 8.Inst.Elétrica | 9.Piso Concreto | 10.Esquadrias | 11.Acabamento | 12.Pintura | 13.Jardinagem | 14.Limpeza.
+                    - Analise os itens do pedido: {equipamentos_str}. Fazem sentido juntos na mesma fase da obra? 
+                    - Pedidos completamente desconexos feitos por Pessoa Física (Ex: Betoneira + Aspirador + Furadeira Magnética) sugerem altíssimo risco de que o cliente seja um "Laranja" alugando para terceiros. Alerte o balcão.
+
+                    FORMATO DA RESPOSTA OBRIGATÓRIO (Use títulos grandes com #):
                     Substitua o início com uma das opções exatas:
                     # 🟢 APROVADO
                     # 🟡 APROVADO COM RESTRIÇÃO
                     # 🔴 REPROVADO
                     
-                    **Resumo da Decisão:** (Parecer direto e objetivo)
+                    **Resumo da Decisão:** (Motivo direto e claro, citando se faltou documento ou qual foi a trava)
                     
-                    **Justificativa Técnica e Documental:** (Análise de CNPJ, CNH, CND e Serasa)
+                    **Auditoria Documental:** (Detalhe explicitamente se a foto da CNH estava legível, se o comprovante estava no nome correto, validade de 3 meses, etc.)
                     
-                    **Análise de Sinergia dos Equipamentos:** (Coerência com a fase da obra)
+                    **Análise de Restrições (Serasa/SPC):** (Quais dívidas o cliente possui? A dívida foi tolerada ou pertence ao setor de risco como material de construção?)
                     
-                    **⚠️ Alerta de Segurança Antifraude para o Balcão:** (Instruções para o vendedor)
+                    **Análise de Sinergia dos Equipamentos:** (Comente se os equipamentos pertencem à mesma fase da obra)
+                    
+                    **⚠️ Alertas e Travas para o Balcão:** (Instruções rigorosas para o vendedor na hora da entrega)
                     """
                     payload_parts.append({"text": prompt})
 
@@ -595,7 +592,7 @@ with aba_nova:
                         st.session_state['pdf_bytes'] = pdf_bytes
                         
                         if DRIVE_FOLDER_ID:
-                            upload_para_google_drive(f"PARECER_{data_hoje}_{doc_limpo}.pdf", pdf_bytes, "application/pdf")
+                            upload_para_google_drive(f"PARECER_{data_hoje.replace('/','-')}_{doc_limpo}.pdf", pdf_bytes, "application/pdf")
                             
                         salvar_no_historico(loja, usr_info['nome'], nome_cliente, doc_cliente, tipo_cliente, equipamentos_str, valor_total_reposicao, forma_pagamento, texto_resultado)
                     else:
@@ -619,7 +616,7 @@ with aba_nova:
                 type="primary"
             )
 
-# --- ABA 2: REAVALIAÇÃO MASTER (EXCLUSIVA DO GESTOR - UNIFICADA) ---
+# --- ABA 2: REAVALIAÇÃO MASTER ---
 if eh_master and aba_reaval:
     with aba_reaval:
         st.markdown("### ⚖️ Painel de Reavaliação de Crédito (Master)")
@@ -741,7 +738,7 @@ if eh_master and aba_black:
         if not df_black_atual.empty: st.dataframe(df_black_atual, use_container_width=True)
         else: st.info("Nenhum documento cadastrado na Blacklist até o momento.")
 
-# --- ABA 4: DASHBOARD GERENCIAL & CUSTOS (UNIFICADO E SEM PERDAS) ---
+# --- ABA 4: DASHBOARD GERENCIAL & CUSTOS ---
 if eh_master and aba_dash:
     with aba_dash:
         st.markdown("### 📊 Visão Geral, Indicadores e Custos de Consultas")
@@ -803,7 +800,7 @@ if eh_master and aba_dash:
         else:
             st.info("Aguardando os primeiros cadastros para gerar o Dashboard.")
 
-# --- ABA 5: HISTÓRICO GERAL (UNIFICADO) ---
+# --- ABA 5: HISTÓRICO GERAL ---
 with aba_hist:
     st.markdown("### 📋 Registro Geral de Auditoria")
     df_hist_all = obter_historico_completo()
