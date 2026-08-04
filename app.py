@@ -11,6 +11,13 @@ import json
 import urllib.parse
 from datetime import datetime
 
+# Tratamento para leitura de PDF local
+try:
+    import pypdf
+    PYPDF_INSTALLED = True
+except ImportError:
+    PYPDF_INSTALLED = False
+
 # Tratamento para biblioteca google-auth
 try:
     from google.oauth2 import service_account
@@ -266,14 +273,25 @@ def salvar_no_historico(filial, atendente, cliente, doc_cliente, tipo_pessoa, eq
     data_hora_dt = datetime.now()
     parecer_up = str(parecer_texto).upper()
     
-    if "[APROVADO COM RESTRIÇÃO]" in parecer_up or "RESTRIÇÃO" in parecer_up or "🟡" in parecer_up:
-        status = "APROVADO COM RESTRIÇÃO"
-    elif "[APROVADO]" in parecer_up or "🟢 APROVADO" in parecer_up:
-        status = "APROVADO"
-    elif "[REPROVADO]" in parecer_up or "🔴 REPROVADO" in parecer_up or "NEGADO" in parecer_up:
+    # DEDO NO GATILHO DO STATUS: Analisa rigorosamente a 1ª Linha do parecer
+    primeira_linha = parecer_up.strip().split('\n')[0]
+    
+    if "🔴" in primeira_linha or "REPROVADO" in primeira_linha:
         status = "⏳ PENDENTE DE REAVALIAÇÃO MASTER"
+    elif "🟡" in primeira_linha or "RESTRIÇÃO" in primeira_linha or "RESTRICAO" in primeira_linha:
+        status = "APROVADO COM RESTRIÇÃO"
+    elif "🟢" in primeira_linha or "APROVADO" in primeira_linha:
+        status = "APROVADO"
     else:
-        status = "ANALISADO"
+        # Fallback de busca no texto com ordem prioritária de reprovação
+        if "🔴 REPROVADO" in parecer_up or "🔴" in parecer_up:
+            status = "⏳ PENDENTE DE REAVALIAÇÃO MASTER"
+        elif "🟡 APROVADO COM RESTRIÇÃO" in parecer_up:
+            status = "APROVADO COM RESTRIÇÃO"
+        elif "🟢 APROVADO" in parecer_up:
+            status = "APROVADO"
+        else:
+            status = "ANALISADO"
 
     row_data = [
         data_hora_dt.strftime("%d/%m/%Y %H:%M:%S"),
@@ -507,25 +525,60 @@ with aba_nova:
                             st.error(f"⚠️ O arquivo **{doc.name}** está completamente vazio (0 bytes).")
                             arquivos_validos = False
                             break
-                            
-                        # FORÇAR DETECÇÃO RIGOROSA DO TIPO MIME PELA EXTENSÃO
+
                         nome_lc = doc.name.lower()
-                        if nome_lc.endswith(".pdf"):
-                            mime_type = "application/pdf"
-                        elif nome_lc.endswith((".jpg", ".jpeg")):
-                            mime_type = "image/jpeg"
-                        elif nome_lc.endswith(".png"):
-                            mime_type = "image/png"
-                        elif nome_lc.endswith(".webp"):
-                            mime_type = "image/webp"
-                        else:
-                            mime_type = doc.type if doc.type else "application/pdf"
-
                         b64_data = base64.b64encode(file_bytes).decode("utf-8")
-                        payload_parts.append({"inlineData": {"mimeType": mime_type, "data": b64_data}})
 
-                        if DRIVE_FOLDER_ID:
-                            sucesso_d, msg_d = upload_para_google_drive(f"{data_hoje.replace('/','-')}_{doc_limpo}_{doc.name}", file_bytes, mime_type)
+                        # DETECÇÃO E EXTRAÇÃO INTELIGENTE DE PDF
+                        if nome_lc.endswith(".pdf"):
+                            if PYPDF_INSTALLED:
+                                try:
+                                    reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+                                    
+                                    # BARREIRA CONTRA PDF COM SENHA
+                                    if reader.is_encrypted:
+                                        st.error(f"🔒 O arquivo **{doc.name}** está protegido por senha. Por favor, remova a senha do PDF ou envie uma foto/print do documento.")
+                                        arquivos_validos = False
+                                        break
+                                    
+                                    texto_pdf = ""
+                                    imagens_extraidas = []
+                                    
+                                    for i, page in enumerate(reader.pages):
+                                        txt = page.extract_text()
+                                        if txt and len(txt.strip()) > 5:
+                                            texto_pdf += f"\n[Página {i+1} do PDF {doc.name}]:\n" + txt
+                                        
+                                        try:
+                                            for img in page.images:
+                                                i_bytes = img.data
+                                                i_b64 = base64.b64encode(i_bytes).decode("utf-8")
+                                                ext = img.name.split(".")[-1].lower()
+                                                i_mime = "image/jpeg" if ext in ['jpg', 'jpeg'] else "image/png"
+                                                imagens_extraidas.append((i_mime, i_b64))
+                                        except Exception:
+                                            pass
+
+                                    if texto_pdf.strip():
+                                        payload_parts.append({"text": f"\n--- TEXTO EXTRAÍDO DO PDF ({doc.name}) ---\n{texto_pdf}\n--- FIM DO PDF ---\n"})
+                                    
+                                    for img_mime, img_b64 in imagens_extraidas:
+                                        payload_parts.append({"inlineData": {"mimeType": img_mime, "data": img_b64}})
+
+                                    if not texto_pdf.strip() and not imagens_extraidas:
+                                        payload_parts.append({"inlineData": {"mimeType": "application/pdf", "data": b64_data}})
+
+                                except Exception:
+                                    payload_parts.append({"inlineData": {"mimeType": "application/pdf", "data": b64_data}})
+                            else:
+                                payload_parts.append({"inlineData": {"mimeType": "application/pdf", "data": b64_data}})
+                        else:
+                            mime_type = "image/jpeg" if nome_lc.endswith((".jpg", ".jpeg")) else "image/png"
+                            payload_parts.append({"inlineData": {"mimeType": mime_type, "data": b64_data}})
+
+                        if DRIVE_FOLDER_ID and arquivos_validos:
+                            mime_drive = "application/pdf" if nome_lc.endswith(".pdf") else "image/jpeg"
+                            sucesso_d, msg_d = upload_para_google_drive(f"{data_hoje.replace('/','-')}_{doc_limpo}_{doc.name}", file_bytes, mime_drive)
                             if not sucesso_d:
                                 st.warning(f"⚠️ **Aviso de Upload Drive no arquivo ({doc.name}):** {msg_d}")
 
