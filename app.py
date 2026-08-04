@@ -204,8 +204,7 @@ def obter_historico_completo():
         except Exception:
             pass
             
-    if not dfs:
-        return None
+    if not dfs: return None
         
     df_total = pd.concat(dfs, ignore_index=True)
     column_mapping = {
@@ -216,8 +215,7 @@ def obter_historico_completo():
     df_total.rename(columns=lambda x: column_mapping.get(str(x).strip(), str(x).strip()), inplace=True)
     df_total = df_total.loc[:, ~df_total.columns.str.contains('^Unnamed')]
     
-    for col in df_total.columns:
-        df_total[col] = df_total[col].astype(str).str.strip()
+    for col in df_total.columns: df_total[col] = df_total[col].astype(str).str.strip()
         
     subset_cols = [c for c in ['Data/Hora', 'CPF_CNPJ'] if c in df_total.columns]
     if subset_cols: df_total.drop_duplicates(subset=subset_cols, keep='first', inplace=True)
@@ -227,7 +225,6 @@ def obter_historico_completo():
 
 def atualizar_status_google_sheet(cpf_cnpj, novo_status, parecer_master):
     doc_busca = str(cpf_cnpj).strip()
-    
     if os.path.exists(ARQUIVO_HISTORICO):
         try:
             df_local = pd.read_csv(ARQUIVO_HISTORICO, sep=";", on_bad_lines='skip', engine='python')
@@ -237,8 +234,7 @@ def atualizar_status_google_sheet(cpf_cnpj, novo_status, parecer_master):
                 if mask.any():
                     df_local.loc[mask, 'Status Decisão'] = novo_status
                     df_local.to_csv(ARQUIVO_HISTORICO, index=False, sep=";", encoding="utf-8-sig", quoting=csv.QUOTE_ALL)
-        except Exception:
-            pass
+        except Exception: pass
 
     if SPREADSHEET_ID and token_acesso_valido:
         try:
@@ -252,8 +248,7 @@ def atualizar_status_google_sheet(cpf_cnpj, novo_status, parecer_master):
                     headers = {"Authorization": f"Bearer {token_acesso_valido}", "Content-Type": "application/json"}
                     body = {"values": [[novo_status]]}
                     requests.put(url, headers=headers, json=body)
-        except Exception:
-            pass
+        except Exception: pass
 
 def carregar_blacklist():
     df_sheets = read_google_sheet("Blacklist")
@@ -261,8 +256,7 @@ def carregar_blacklist():
     if os.path.exists(ARQUIVO_HISTORICO):
         try:
             return pd.read_csv(ARQUIVO_BLACKLIST, sep=";", dtype=str, on_bad_lines='skip', engine='python')
-        except Exception:
-            pass
+        except Exception: pass
     return pd.DataFrame(columns=["Documento", "Nome_Razao", "Motivo_Alerta", "Data_Inclusao", "Cadastrado_Por"])
 
 def salvar_blacklist_local(df):
@@ -505,98 +499,118 @@ with aba_nova:
                     data_hoje = datetime.now().strftime("%d/%m/%Y")
                     mes_atual = datetime.now().strftime("%B %Y")
                     
+                    arquivos_validos = True
                     for doc in documentos:
                         file_bytes = doc.getvalue()
+                        
+                        if len(file_bytes) < 10: 
+                            st.error(f"⚠️ O arquivo **{doc.name}** está completamente vazio (0 bytes).")
+                            arquivos_validos = False
+                            break
+                            
+                        # FORÇAR DETECÇÃO RIGOROSA DO TIPO MIME PELA EXTENSÃO
+                        nome_lc = doc.name.lower()
+                        if nome_lc.endswith(".pdf"):
+                            mime_type = "application/pdf"
+                        elif nome_lc.endswith((".jpg", ".jpeg")):
+                            mime_type = "image/jpeg"
+                        elif nome_lc.endswith(".png"):
+                            mime_type = "image/png"
+                        elif nome_lc.endswith(".webp"):
+                            mime_type = "image/webp"
+                        else:
+                            mime_type = doc.type if doc.type else "application/pdf"
+
                         b64_data = base64.b64encode(file_bytes).decode("utf-8")
-                        payload_parts.append({"inlineData": {"mimeType": doc.type, "data": b64_data}})
+                        payload_parts.append({"inlineData": {"mimeType": mime_type, "data": b64_data}})
 
                         if DRIVE_FOLDER_ID:
-                            sucesso_d, msg_d = upload_para_google_drive(f"{data_hoje.replace('/','-')}_{doc_limpo}_{doc.name}", file_bytes, doc.type)
+                            sucesso_d, msg_d = upload_para_google_drive(f"{data_hoje.replace('/','-')}_{doc_limpo}_{doc.name}", file_bytes, mime_type)
                             if not sucesso_d:
                                 st.warning(f"⚠️ **Aviso de Upload Drive no arquivo ({doc.name}):** {msg_d}")
 
-                    equipamentos_str = ", ".join(lista_nomes_finais)
+                    if arquivos_validos:
+                        equipamentos_str = ", ".join(lista_nomes_finais)
 
-                    # PROMPT ENGINE 2.0 - MENTE DO ANALISTA IMPLACÁVEL
-                    prompt = f"""
-                    Você é um Analista Sênior de Crédito e Antifraude extremamente rigoroso da Casa do Construtor.
-                    Sua missão é analisar os documentos anexados e emitir um parecer preciso, equilibrando segurança corporativa e aprovação comercial.
-                    DATA DE HOJE PARA REFERÊNCIA DE VALIDADE: {data_hoje} ({mes_atual})
+                        prompt = f"""
+                        Você é um Analista Sênior de Crédito e Antifraude extremamente rigoroso da Casa do Construtor.
+                        Sua missão é analisar os documentos anexados e emitir um parecer preciso, equilibrando segurança corporativa e aprovação comercial.
+                        DATA DE HOJE PARA REFERÊNCIA DE VALIDADE: {data_hoje} ({mes_atual})
 
-                    DADOS DA OPERAÇÃO:
-                    - Cliente: {nome_cliente} (CPF/CNPJ: {doc_cliente})
-                    - Natureza: {tipo_cliente} ({subtipo_pj if subtipo_pj else 'Pessoa Física'})
-                    - Solicitante / Contato: {nome_solicitante} | {contato_solicitante}
-                    - Equipamento(s): {equipamentos_str}
-                    - Valor Total de Reposição Risco: R$ {valor_total_reposicao:,.2f}
-                    - Condição Solicitada: {forma_pagamento}
-                    
-                    REGRA 0: DOCUMENTAÇÃO OBRIGATÓRIA (FALHA AUTOMÁTICA)
-                    - Você DEVE obrigatoriamente verificar as imagens/PDFs anexados.
-                    - Se o usuário enviou APENAS relatórios do Serasa/SPC/Consult Center e NÃO há nenhuma foto de Documento de Identidade (CNH ou RG com CPF) E nenhum Comprovante de Residência -> O PARECER DEVE SER IMEDIATAMENTE "🔴 REPROVADO". Motivo: Documentação incompleta (falta CNH e Comprovante). Não invente dados nem aprove sem ver a foto real do documento.
-
-                    REGRA 1: VALIDAÇÃO DO COMPROVANTE DE RESIDÊNCIA (PF)
-                    - O comprovante de residência deve ter no MÁXIMO 3 meses de emissão em relação a hoje ({mes_atual}). Faturas a vencer no próximo mês ou emitidas recentemente são 100% VÁLIDAS.
-                    - Faturas de Cartão de Crédito são aceitas (respeitando a regra dos 3 meses).
-                    - Titularidade: O comprovante deve estar no nome exato do cliente. EXCEÇÃO: Para equipamentos de baixo valor de risco, aceita-se no nome do Pai ou da Mãe (você deve conferir a filiação no RG/CNH anexado).
-                    - Contratos de Locação (Aluguel): SÓ SÃO VÁLIDOS se estiverem registrados em cartório, com data atual, E acompanhados de uma conta de consumo no nome do proprietário do imóvel (locador).
-
-                    REGRA 2: ANÁLISE DE RESTRIÇÕES E CRÉDITO (SPC/SERASA)
-                    - O cliente NÃO precisa ter nome 100% limpo. Você deve analisar a ORIGEM da dívida.
-                    - Restrições TOLERADAS (Aprove): Financiamento de Bancos Comerciais, Lojas de Varejo (ex: Havan, Renner), Telecomunicações (Claro, Vivo, Tim, Oi), Contas de consumo básicas atrasadas.
-                    - Restrições GRAVES (Reprove imediatamente para faturamento): Dívidas com lojas de Materiais de Construção, Locadoras de Equipamentos, Dívidas de Aluguel/Imobiliárias, Cheques sem fundo repetitivos, ou Estelionato. Sinergia negativa com o nosso setor de atuação = Risco Alto.
-
-                    REGRA 3: PRAZOS E CONDIÇÕES DE PAGAMENTO (INEGOCIÁVEL)
-                    - Pessoa Física (PF): Pagamento EXCLUSIVAMENTE À Vista / PIX Antecipado. Boleto NUNCA é permitido para PF.
-                    - Empresa (PJ) < 1 ano de abertura: Boleto no máximo 7 dias.
-                    - MEI e Condomínio: Boleto no máximo 7 dias.
-                    - Empresa Padrão (LTDA/SA) > 1 ano de abertura (sem restrições graves no setor): Pode aprovar para os prazos solicitados (7, 14, 21 ou 28 dias).
-
-                    REGRA 4: DOCUMENTAÇÃO PJ
-                    - Contratos Sociais e Requerimentos de Empresário NÃO possuem data de validade (são históricos).
-
-                    REGRA 5: SINERGIA DAS 14 FASES DA OBRA E RISCO DE "LARANJA"
-                    - Fases: 1.Canteiro | 2.Fundação | 3.Demolição | 4.Estrutura | 5.Alvenaria | 6.Cobertura | 7.Inst.Hidráulica | 8.Inst.Elétrica | 9.Piso Concreto | 10.Esquadrias | 11.Acabamento | 12.Pintura | 13.Jardinagem | 14.Limpeza.
-                    - Analise os itens do pedido: {equipamentos_str}. Fazem sentido juntos na mesma fase da obra? 
-                    - Pedidos completamente desconexos feitos por Pessoa Física (Ex: Betoneira + Aspirador + Furadeira Magnética) sugerem altíssimo risco de que o cliente seja um "Laranja" alugando para terceiros. Alerte o balcão.
-
-                    FORMATO DA RESPOSTA OBRIGATÓRIO (Use títulos grandes com #):
-                    Substitua o início com uma das opções exatas:
-                    # 🟢 APROVADO
-                    # 🟡 APROVADO COM RESTRIÇÃO
-                    # 🔴 REPROVADO
-                    
-                    **Resumo da Decisão:** (Motivo direto e claro, citando se faltou documento ou qual foi a trava)
-                    
-                    **Auditoria Documental:** (Detalhe explicitamente se a foto da CNH estava legível, se o comprovante estava no nome correto, validade de 3 meses, etc.)
-                    
-                    **Análise de Restrições (Serasa/SPC):** (Quais dívidas o cliente possui? A dívida foi tolerada ou pertence ao setor de risco como material de construção?)
-                    
-                    **Análise de Sinergia dos Equipamentos:** (Comente se os equipamentos pertencem à mesma fase da obra)
-                    
-                    **⚠️ Alertas e Travas para o Balcão:** (Instruções rigorosas para o vendedor na hora da entrega)
-                    """
-                    payload_parts.append({"text": prompt})
-
-                    url_api = f"https://us-central1-aiplatform.googleapis.com/v1/projects/{gcp_project_id}/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent"
-                    headers_api = {"Content-Type": "application/json", "Authorization": f"Bearer {token_acesso_valido}"}
-                    data_api = {"contents": [{"role": "user", "parts": payload_parts}], "generationConfig": {"temperature": 0.1}}
-
-                    res = requests.post(url_api, json=data_api, headers=headers_api)
-
-                    if res.status_code == 200:
-                        texto_resultado = res.json()['candidates'][0]['content']['parts'][0]['text']
-                        st.session_state['resultado_parecer'] = texto_resultado
+                        DADOS DA OPERAÇÃO:
+                        - Cliente: {nome_cliente} (CPF/CNPJ: {doc_cliente})
+                        - Natureza: {tipo_cliente} ({subtipo_pj if subtipo_pj else 'Pessoa Física'})
+                        - Solicitante / Contato: {nome_solicitante} | {contato_solicitante}
+                        - Equipamento(s): {equipamentos_str}
+                        - Valor Total de Reposição Risco: R$ {valor_total_reposicao:,.2f}
+                        - Condição Solicitada: {forma_pagamento}
                         
-                        pdf_bytes = gerar_pdf_parecer(nome_cliente, doc_cliente, tipo_cliente, forma_pagamento, loja, equipamentos_str, valor_total_reposicao, texto_resultado)
-                        st.session_state['pdf_bytes'] = pdf_bytes
+                        REGRA 0: DOCUMENTAÇÃO OBRIGATÓRIA (FALHA AUTOMÁTICA)
+                        - Você DEVE obrigatoriamente verificar as imagens/PDFs anexados.
+                        - Se o usuário enviou APENAS relatórios do Serasa/SPC/Consult Center e NÃO há nenhuma foto de Documento de Identidade (CNH ou RG com CPF) E nenhum Comprovante de Residência -> O PARECER DEVE SER IMEDIATAMENTE "🔴 REPROVADO". Motivo: Documentação incompleta (falta CNH e Comprovante). Não invente dados nem aprove sem ver a foto real do documento.
+
+                        REGRA 1: VALIDAÇÃO DO COMPROVANTE DE RESIDÊNCIA (PF)
+                        - O comprovante de residência deve ter no MÁXIMO 3 meses de emissão em relação a hoje ({mes_atual}). Faturas a vencer no próximo mês ou emitidas recentemente são 100% VÁLIDAS.
+                        - Faturas de Cartão de Crédito são aceitas (respeitando a regra dos 3 meses).
+                        - Titularidade: O comprovante deve estar no nome exato do cliente. EXCEÇÃO: Para equipamentos de baixo valor de risco, aceita-se no nome do Pai ou da Mãe (você deve conferir a filiação no RG/CNH anexado).
+                        - Contratos de Locação (Aluguel): SÓ SÃO VÁLIDOS se estiverem registrados em cartório, com data atual, E acompanhados de uma conta de consumo no nome do proprietário do imóvel (locador).
+
+                        REGRA 2: ANÁLISE DE RESTRIÇÕES E CRÉDITO (SPC/SERASA)
+                        - O cliente NÃO precisa ter nome 100% limpo. Você deve analisar a ORIGEM da dívida.
+                        - Restrições TOLERADAS (Aprove): Financiamento de Bancos Comerciais, Lojas de Varejo (ex: Havan, Renner), Telecomunicações (Claro, Vivo, Tim, Oi), Contas de consumo básicas atrasadas.
+                        - Restrições GRAVES (Reprove imediatamente para faturamento): Dívidas com lojas de Materiais de Construção, Locadoras de Equipamentos, Dívidas de Aluguel/Imobiliárias, Cheques sem fundo repetitivos, ou Estelionato. Sinergia negativa com o nosso setor de atuação = Risco Alto.
+
+                        REGRA 3: PRAZOS E CONDIÇÕES DE PAGAMENTO (INEGOCIÁVEL)
+                        - Pessoa Física (PF): Pagamento EXCLUSIVAMENTE À Vista / PIX Antecipado. Boleto NUNCA é permitido para PF.
+                        - Empresa (PJ) < 1 ano de abertura: Boleto no máximo 7 dias.
+                        - MEI e Condomínio: Boleto no máximo 7 dias.
+                        - Empresa Padrão (LTDA/SA) > 1 ano de abertura (sem restrições graves no setor): Pode aprovar para os prazos solicitados (7, 14, 21 ou 28 dias).
+
+                        REGRA 4: DOCUMENTAÇÃO PJ
+                        - Contratos Sociais e Requerimentos de Empresário NÃO possuem data de validade (são históricos).
+
+                        REGRA 5: SINERGIA DAS 14 FASES DA OBRA E RISCO DE "LARANJA"
+                        - Fases: 1.Canteiro | 2.Fundação | 3.Demolição | 4.Estrutura | 5.Alvenaria | 6.Cobertura | 7.Inst.Hidráulica | 8.Inst.Elétrica | 9.Piso Concreto | 10.Esquadrias | 11.Acabamento | 12.Pintura | 13.Jardinagem | 14.Limpeza.
+                        - Analise os itens do pedido: {equipamentos_str}. Fazem sentido juntos na mesma fase da obra? 
+                        - Pedidos completamente desconexos feitos por Pessoa Física (Ex: Betoneira + Aspirador + Furadeira Magnética) sugerem altíssimo risco de que o cliente seja um "Laranja" alugando para terceiros. Alerte o balcão.
+
+                        FORMATO DA RESPOSTA OBRIGATÓRIO (Use títulos grandes com #):
+                        Substitua o início com uma das opções exatas:
+                        # 🟢 APROVADO
+                        # 🟡 APROVADO COM RESTRIÇÃO
+                        # 🔴 REPROVADO
                         
-                        if DRIVE_FOLDER_ID:
-                            upload_para_google_drive(f"PARECER_{data_hoje.replace('/','-')}_{doc_limpo}.pdf", pdf_bytes, "application/pdf")
+                        **Resumo da Decisão:** (Motivo direto e claro, citando se faltou documento ou qual foi a trava)
+                        
+                        **Auditoria Documental:** (Detalhe explicitamente se a foto da CNH estava legível, se o comprovante estava no nome correto, validade de 3 meses, etc.)
+                        
+                        **Análise de Restrições (Serasa/SPC):** (Quais dívidas o cliente possui? A dívida foi tolerada ou pertence ao setor de risco como material de construção?)
+                        
+                        **Análise de Sinergia dos Equipamentos:** (Comente se os equipamentos pertencem à mesma fase da obra)
+                        
+                        **⚠️ Alertas e Travas para o Balcão:** (Instruções rigorosas para o vendedor na hora da entrega)
+                        """
+                        payload_parts.append({"text": prompt})
+
+                        url_api = f"https://us-central1-aiplatform.googleapis.com/v1/projects/{gcp_project_id}/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent"
+                        headers_api = {"Content-Type": "application/json", "Authorization": f"Bearer {token_acesso_valido}"}
+                        data_api = {"contents": [{"role": "user", "parts": payload_parts}], "generationConfig": {"temperature": 0.1}}
+
+                        res = requests.post(url_api, json=data_api, headers=headers_api)
+
+                        if res.status_code == 200:
+                            texto_resultado = res.json()['candidates'][0]['content']['parts'][0]['text']
+                            st.session_state['resultado_parecer'] = texto_resultado
                             
-                        salvar_no_historico(loja, usr_info['nome'], nome_cliente, doc_cliente, tipo_cliente, equipamentos_str, valor_total_reposicao, forma_pagamento, texto_resultado)
-                    else:
-                        st.error(f"❌ Erro na API (Código {res.status_code}): {res.text}")
+                            pdf_bytes = gerar_pdf_parecer(nome_cliente, doc_cliente, tipo_cliente, forma_pagamento, loja, equipamentos_str, valor_total_reposicao, texto_resultado)
+                            st.session_state['pdf_bytes'] = pdf_bytes
+                            
+                            if DRIVE_FOLDER_ID:
+                                upload_para_google_drive(f"PARECER_{data_hoje.replace('/','-')}_{doc_limpo}.pdf", pdf_bytes, "application/pdf")
+                                
+                            salvar_no_historico(loja, usr_info['nome'], nome_cliente, doc_cliente, tipo_cliente, equipamentos_str, valor_total_reposicao, forma_pagamento, texto_resultado)
+                        else:
+                            st.error(f"❌ Erro na API (Código {res.status_code}): {res.text}")
 
                 except Exception as e:
                     st.error(f"Erro na execução da requisição: {e}")
