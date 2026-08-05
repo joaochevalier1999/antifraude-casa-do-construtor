@@ -114,12 +114,17 @@ if not st.session_state["logged_in"]:
                         st.error("❌ Credenciais inválidas.")
     st.stop()
 
-# --- AUTENTICAÇÃO GOOGLE CLOUD (CACHEADA PARA EVITAR CONGELAMENTO) ---
+# --- AUTENTICAÇÃO GOOGLE CLOUD (PROTEGIDA E FLEXÍVEL) ---
 @st.cache_data(ttl=3000)
 def obter_token_gcp():
     if GOOGLE_AUTH_INSTALLED and "GCP_CREDENTIALS" in st.secrets:
         try:
-            creds_json = json.loads(st.secrets["GCP_CREDENTIALS"])
+            creds_raw = st.secrets["GCP_CREDENTIALS"]
+            if isinstance(creds_raw, str):
+                creds_json = json.loads(creds_raw)
+            else:
+                creds_json = dict(creds_raw)
+                
             project_id = creds_json.get("project_id")
             escopos = [
                 'https://www.googleapis.com/auth/cloud-platform',
@@ -130,8 +135,8 @@ def obter_token_gcp():
             req_auth = GoogleAuthRequest()
             credenciais.refresh(req_auth)
             return credenciais.token, project_id
-        except Exception:
-            pass
+        except Exception as e:
+            st.error(f"⚠️ Erro ao autenticar chave GCP: {e}")
     return None, None
 
 token_acesso_valido, gcp_project_id = obter_token_gcp()
