@@ -11,6 +11,14 @@ import json
 import urllib.parse
 from datetime import datetime
 
+# --- CONFIGURAÇÃO DA PÁGINA (PRIMEIRO COMANDO OBRIGATÓRIO) ---
+st.set_page_config(
+    page_title="Portal Antifraude & Crédito - Casa do Construtor",
+    page_icon="🏗️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
 # Tratamento para leitura de PDF local
 try:
     import pypdf
@@ -26,18 +34,15 @@ try:
 except ImportError:
     GOOGLE_AUTH_INSTALLED = False
 
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
-
-# --- CONFIGURAÇÃO DA PÁGINA ---
-st.set_page_config(
-    page_title="Portal Antifraude & Crédito - Casa do Construtor",
-    page_icon="🏗️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# Tratamento para ReportLab
+try:
+    from reportlab.lib.pagesizes import letter
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib import colors
+    REPORTLAB_INSTALLED = True
+except ImportError:
+    REPORTLAB_INSTALLED = False
 
 # Estilização CSS Profissional
 st.markdown("""
@@ -109,26 +114,27 @@ if not st.session_state["logged_in"]:
                         st.error("❌ Credenciais inválidas.")
     st.stop()
 
-# --- AUTENTICAÇÃO GOOGLE CLOUD ---
-token_acesso_valido = None
-gcp_project_id = None
-erro_auth = None
+# --- AUTENTICAÇÃO GOOGLE CLOUD (PROTEGIDA CONTRA CONGELAMENTO) ---
+@st.cache_data(ttl=3000)
+def obter_token_gcp():
+    if GOOGLE_AUTH_INSTALLED and "GCP_CREDENTIALS" in st.secrets:
+        try:
+            creds_json = json.loads(st.secrets["GCP_CREDENTIALS"])
+            project_id = creds_json.get("project_id")
+            escopos = [
+                'https://www.googleapis.com/auth/cloud-platform',
+                'https://www.googleapis.com/auth/spreadsheets',
+                'https://www.googleapis.com/auth/drive'
+            ]
+            credenciais = service_account.Credentials.from_service_account_info(creds_json, scopes=escopos)
+            req_auth = GoogleAuthRequest()
+            credenciais.refresh(req_auth)
+            return credenciais.token, project_id
+        except Exception:
+            pass
+    return None, None
 
-if GOOGLE_AUTH_INSTALLED and "GCP_CREDENTIALS" in st.secrets:
-    try:
-        creds_json = json.loads(st.secrets["GCP_CREDENTIALS"])
-        gcp_project_id = creds_json.get("project_id")
-        escopos = [
-            'https://www.googleapis.com/auth/cloud-platform',
-            'https://www.googleapis.com/auth/spreadsheets',
-            'https://www.googleapis.com/auth/drive'
-        ]
-        credenciais = service_account.Credentials.from_service_account_info(creds_json, scopes=escopos)
-        req_auth = GoogleAuthRequest()
-        credenciais.refresh(req_auth)
-        token_acesso_valido = credenciais.token
-    except Exception as e:
-        erro_auth = f"Erro ao processar o JSON: {e}"
+token_acesso_valido, gcp_project_id = obter_token_gcp()
 
 SPREADSHEET_ID = st.secrets.get("SPREADSHEET_ID", None)
 DRIVE_FOLDER_ID = st.secrets.get("DRIVE_FOLDER_ID", None)
@@ -147,7 +153,7 @@ def upload_para_google_drive(nome_arquivo, file_bytes, mime_type):
             'data': ('metadata', json.dumps(metadata), 'application/json; charset=UTF-8'),
             'file': (nome_arquivo, file_bytes, mime_type)
         }
-        res = requests.post(url, headers=headers, files=files)
+        res = requests.post(url, headers=headers, files=files, timeout=15)
         if res.status_code == 200:
             return True, "Enviado com sucesso."
         else:
@@ -163,7 +169,7 @@ def append_google_sheet(tab_name, row_values):
         url = f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}/values/{tab_encoded}!A1:append?valueInputOption=USER_ENTERED"
         headers = {"Authorization": f"Bearer {token_acesso_valido}", "Content-Type": "application/json"}
         body = {"values": [row_values]}
-        res = requests.post(url, headers=headers, json=body)
+        res = requests.post(url, headers=headers, json=body, timeout=15)
         return res.status_code == 200, res.text
     except Exception as e:
         return False, str(e)
@@ -175,7 +181,7 @@ def read_google_sheet(tab_name):
         tab_encoded = urllib.parse.quote(tab_name)
         url = f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}/values/{tab_encoded}!A1:Z"
         headers = {"Authorization": f"Bearer {token_acesso_valido}"}
-        res = requests.get(url, headers=headers)
+        res = requests.get(url, headers=headers, timeout=15)
         if res.status_code == 200:
             vals = res.json().get("values", [])
             if len(vals) > 1:
@@ -254,7 +260,7 @@ def atualizar_status_google_sheet(cpf_cnpj, novo_status, parecer_master):
                     url = f"https://sheets.googleapis.com/v4/spreadsheets/{SPREADSHEET_ID}/values/Historico!K{row_idx}?valueInputOption=USER_ENTERED"
                     headers = {"Authorization": f"Bearer {token_acesso_valido}", "Content-Type": "application/json"}
                     body = {"values": [[novo_status]]}
-                    requests.put(url, headers=headers, json=body)
+                    requests.put(url, headers=headers, json=body, timeout=15)
         except Exception: pass
 
 def carregar_blacklist():
@@ -273,7 +279,6 @@ def salvar_no_historico(filial, atendente, cliente, doc_cliente, tipo_pessoa, eq
     data_hora_dt = datetime.now()
     parecer_up = str(parecer_texto).upper()
     
-    # DEDO NO GATILHO DO STATUS: Analisa rigorosamente a 1ª Linha do parecer
     primeira_linha = parecer_up.strip().split('\n')[0]
     
     if "🔴" in primeira_linha or "REPROVADO" in primeira_linha:
@@ -283,7 +288,6 @@ def salvar_no_historico(filial, atendente, cliente, doc_cliente, tipo_pessoa, eq
     elif "🟢" in primeira_linha or "APROVADO" in primeira_linha:
         status = "APROVADO"
     else:
-        # Fallback de busca no texto com ordem prioritária de reprovação
         if "🔴 REPROVADO" in parecer_up or "🔴" in parecer_up:
             status = "⏳ PENDENTE DE REAVALIAÇÃO MASTER"
         elif "🟡 APROVADO COM RESTRIÇÃO" in parecer_up:
@@ -319,6 +323,8 @@ def formatar_texto_para_reportlab(texto):
     return t
 
 def gerar_pdf_parecer(nome_cliente, doc_cliente, tipo_pessoa, prazo, loja, equipamentos_str, valor_total, texto_parecer, chancela_master=None):
+    if not REPORTLAB_INSTALLED:
+        return b""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=36, leftMargin=36, topMargin=36, bottomMargin=36)
     story, styles = [], getSampleStyleSheet()
@@ -529,13 +535,11 @@ with aba_nova:
                         nome_lc = doc.name.lower()
                         b64_data = base64.b64encode(file_bytes).decode("utf-8")
 
-                        # DETECÇÃO E EXTRAÇÃO INTELIGENTE DE PDF
                         if nome_lc.endswith(".pdf"):
                             if PYPDF_INSTALLED:
                                 try:
                                     reader = pypdf.PdfReader(io.BytesIO(file_bytes))
                                     
-                                    # BARREIRA CONTRA PDF COM SENHA
                                     if reader.is_encrypted:
                                         st.error(f"🔒 O arquivo **{doc.name}** está protegido por senha. Por favor, remova a senha do PDF ou envie uma foto/print do documento.")
                                         arquivos_validos = False
@@ -649,7 +653,7 @@ with aba_nova:
                         headers_api = {"Content-Type": "application/json", "Authorization": f"Bearer {token_acesso_valido}"}
                         data_api = {"contents": [{"role": "user", "parts": payload_parts}], "generationConfig": {"temperature": 0.1}}
 
-                        res = requests.post(url_api, json=data_api, headers=headers_api)
+                        res = requests.post(url_api, json=data_api, headers=headers_api, timeout=45)
 
                         if res.status_code == 200:
                             texto_resultado = res.json()['candidates'][0]['content']['parts'][0]['text']
@@ -742,7 +746,6 @@ if eh_master and aba_reaval:
                             if not justificativa_master:
                                 st.error("⚠️ Digite a justificativa do gestor antes de confirmar.")
                             else:
-                                # CORREÇÃO DA FORMATAÇÃO DE STATUS MASTER
                                 if "RESTRIÇÃO" in nova_decisao or "RESTRICAO" in nova_decisao:
                                     novo_status_str = "🟡 APROVADO COM RESTRIÇÃO (MASTER)"
                                 elif "REPROVADO" in nova_decisao or "🔴" in nova_decisao:
