@@ -1,5 +1,6 @@
 streamlit
-google-genai
 pandas
+requests
 reportlab
+pypdf
 google-auth
