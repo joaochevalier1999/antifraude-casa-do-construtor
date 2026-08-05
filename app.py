@@ -742,11 +742,16 @@ if eh_master and aba_reaval:
                             if not justificativa_master:
                                 st.error("⚠️ Digite a justificativa do gestor antes de confirmar.")
                             else:
-                                novo_status_str = nova_decisao.split()[1]
-                                if "RESTRIÇÃO" in nova_decisao: novo_status_str = "APROVADO COM RESTRIÇÃO"
+                                # CORREÇÃO DA FORMATAÇÃO DE STATUS MASTER
+                                if "RESTRIÇÃO" in nova_decisao or "RESTRICAO" in nova_decisao:
+                                    novo_status_str = "🟡 APROVADO COM RESTRIÇÃO (MASTER)"
+                                elif "REPROVADO" in nova_decisao or "🔴" in nova_decisao:
+                                    novo_status_str = "🔴 REPROVADO (MASTER)"
+                                else:
+                                    novo_status_str = "🟢 APROVADO (MASTER)"
                                 
                                 doc_alvo = dados_cliente.get('CPF_CNPJ', '')
-                                atualizar_status_google_sheet(doc_alvo, f"🟢 {novo_status_str} (MASTER)", justificativa_master)
+                                atualizar_status_google_sheet(doc_alvo, novo_status_str, justificativa_master)
                                 
                                 parecer_original = dados_cliente.get('Parecer_IA', 'Parecer de IA reavaliado.')
                                 pdf_master = gerar_pdf_parecer(
@@ -754,7 +759,7 @@ if eh_master and aba_reaval:
                                     dados_cliente.get('Tipo_Pessoa', 'PJ/PF'), dados_cliente.get('Prazo', 'N/A'), 
                                     dados_cliente.get('Filial', 'N/A'), dados_cliente.get('Equipamentos', 'N/A'), 
                                     3000.0, parecer_original, 
-                                    chancela_master=f"{nova_decisao} - Motivo: {justificativa_master}"
+                                    chancela_master=f"{novo_status_str} - Motivo: {justificativa_master}"
                                 )
                                 
                                 if DRIVE_FOLDER_ID:
