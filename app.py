@@ -19,14 +19,7 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Tratamento para biblioteca PIL (Validação de Imagens)
-try:
-    from PIL import Image
-    PIL_INSTALLED = True
-except ImportError:
-    PIL_INSTALLED = False
-
-# Tratamento para leitura de PDF local
+# Tratamento para leitura de PDF local (Apoio de texto)
 try:
     import pypdf
     PYPDF_INSTALLED = True
@@ -50,25 +43,6 @@ try:
     REPORTLAB_INSTALLED = True
 except ImportError:
     REPORTLAB_INSTALLED = False
-
-# FUNÇÃO DE VALIDAÇÃO E NORMALIZAÇÃO DE IMAGENS (ANTI-ERRO 400)
-def validar_e_converter_imagem(bytes_img):
-    if not PIL_INSTALLED:
-        return None, None
-    try:
-        img = Image.open(io.BytesIO(bytes_img))
-        # Descarta elementos gráficos/técnicos minúsculos (padrões de segurança da CNH-e)
-        if img.width < 100 or img.height < 100:
-            return None, None
-        # Converte RGBA, CMYK, P ou 1 para RGB simples
-        if img.mode != "RGB":
-            img = img.convert("RGB")
-        buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=85)
-        b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-        return "image/jpeg", b64
-    except Exception:
-        return None, None
 
 # Estilização CSS Profissional
 st.markdown("""
@@ -569,54 +543,34 @@ with aba_nova:
                         nome_lc = doc.name.lower()
                         b64_data = base64.b64encode(file_bytes).decode("utf-8")
 
+                        # SOLUÇÃO HÍBRIDA (Manda o PDF visualmente + Extrai o texto para ajudar)
                         if nome_lc.endswith(".pdf"):
+                            
+                            # 1. Manda o PDF original para a visão do Gemini sempre
+                            payload_parts.append({"inlineData": {"mimeType": "application/pdf", "data": b64_data}})
+
+                            # 2. Se o pypdf estiver instalado, tenta extrair os textos (Ex: SPC) para apoiar a leitura
                             if PYPDF_INSTALLED:
                                 try:
                                     reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-                                    
                                     if reader.is_encrypted:
-                                        st.error(f"🔒 O arquivo **{doc.name}** está protegido por senha. Por favor, remova a senha do PDF ou envie uma foto/print do documento.")
-                                        arquivos_validos = False
-                                        break
-                                    
-                                    texto_pdf = ""
-                                    imagens_extraidas = []
-                                    
-                                    for i, page in enumerate(reader.pages):
-                                        txt = page.extract_text()
-                                        if txt and len(txt.strip()) > 5:
-                                            texto_pdf += f"\n[Página {i+1} do PDF {doc.name}]:\n" + txt
+                                        st.warning(f"🔒 O PDF **{doc.name}** possui senha. O sistema tentará analisá-lo mesmo assim, mas pode haver falhas na leitura.")
+                                    else:
+                                        texto_pdf = ""
+                                        for i, page in enumerate(reader.pages):
+                                            txt = page.extract_text()
+                                            if txt and len(txt.strip()) > 10:
+                                                texto_pdf += f"\n[Página {i+1} do arquivo {doc.name}]:\n" + txt
                                         
-                                        # Extração com validação visual (elimina retículas/elementos da CNH-e)
-                                        try:
-                                            for img in page.images:
-                                                m_type, img_b64 = validar_e_converter_imagem(img.data)
-                                                if m_type and img_b64:
-                                                    imagens_extraidas.append((m_type, img_b64))
-                                        except Exception:
-                                            pass
-
-                                    if texto_pdf.strip():
-                                        payload_parts.append({"text": f"\n--- TEXTO EXTRAÍDO DO PDF ({doc.name}) ---\n{texto_pdf}\n--- FIM DO PDF ---\n"})
-                                    
-                                    for img_mime, img_b64 in imagens_extraidas:
-                                        payload_parts.append({"inlineData": {"mimeType": img_mime, "data": img_b64}})
-
-                                    if not texto_pdf.strip() and not imagens_extraidas:
-                                        payload_parts.append({"inlineData": {"mimeType": "application/pdf", "data": b64_data}})
-
+                                        if texto_pdf.strip():
+                                            payload_parts.append({"text": f"\n--- TEXTO EXTRAÍDO COMO APOIO DO PDF ({doc.name}) ---\n{texto_pdf}\n--- FIM DO TEXTO DE APOIO ---\n"})
                                 except Exception:
-                                    payload_parts.append({"inlineData": {"mimeType": "application/pdf", "data": b64_data}})
-                            else:
-                                payload_parts.append({"inlineData": {"mimeType": "application/pdf", "data": b64_data}})
+                                    pass # Se falhar a extração de texto, o PDF visual (passo 1) já foi enviado
+                                    
                         else:
-                            # Validação de uploads de fotos (JPG / PNG)
-                            m_type, img_b64 = validar_e_converter_imagem(file_bytes)
-                            if m_type and img_b64:
-                                payload_parts.append({"inlineData": {"mimeType": m_type, "data": img_b64}})
-                            else:
-                                mime_fallback = "image/jpeg" if nome_lc.endswith((".jpg", ".jpeg")) else "image/png"
-                                payload_parts.append({"inlineData": {"mimeType": mime_fallback, "data": b64_data}})
+                            # Se for Imagem JPG/PNG normal
+                            mime_type = "image/jpeg" if nome_lc.endswith((".jpg", ".jpeg")) else "image/png"
+                            payload_parts.append({"inlineData": {"mimeType": mime_type, "data": b64_data}})
 
                         if DRIVE_FOLDER_ID and arquivos_validos:
                             mime_drive = "application/pdf" if nome_lc.endswith(".pdf") else "image/jpeg"
