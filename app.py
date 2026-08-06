@@ -196,7 +196,7 @@ def read_google_sheet(tab_name):
                 header_idx = 0
                 for i, r in enumerate(vals[:5]):
                     r_str = [str(x).upper() for x in r]
-                    if any(k in r_str for k in ["CLIENTE", "CPF_CNPJ", "FILIAL", "DATA/HORA"]):
+                    if any(k in r_str for k in ["CLIENTE", "CPF_CNPJ", "FILIAL", "DATA/HORA", "DOCUMENTO"]):
                         header_idx = i
                         break
                 cols = [str(c).strip() for c in vals[header_idx]]
@@ -272,12 +272,34 @@ def atualizar_status_google_sheet(cpf_cnpj, novo_status, parecer_master):
         except Exception: pass
 
 def carregar_blacklist():
+    df = None
     df_sheets = read_google_sheet("Blacklist")
-    if df_sheets is not None and not df_sheets.empty: return df_sheets
-    if os.path.exists(ARQUIVO_HISTORICO):
+    if df_sheets is not None and not df_sheets.empty:
+        df = df_sheets
+    elif os.path.exists(ARQUIVO_BLACKLIST):
         try:
-            return pd.read_csv(ARQUIVO_BLACKLIST, sep=";", dtype=str, on_bad_lines='skip', engine='python')
+            df = pd.read_csv(ARQUIVO_BLACKLIST, sep=";", dtype=str, on_bad_lines='skip', engine='python')
         except Exception: pass
+
+    if df is not None and not df.empty:
+        mapping = {}
+        for col in df.columns:
+            c_upper = str(col).strip().upper()
+            if c_upper in ['DOCUMENTO', 'CPF', 'CNPJ', 'CPF_CNPJ', 'CPF/CNPJ', 'DOC']:
+                mapping[col] = 'Documento'
+            elif c_upper in ['NOME_RAZAO', 'NOME', 'RAZAO', 'RAZAO SOCIAL', 'NOME/RAZAO']:
+                mapping[col] = 'Nome_Razao'
+            elif c_upper in ['MOTIVO_ALERTA', 'MOTIVO', 'ALERTA']:
+                mapping[col] = 'Motivo_Alerta'
+            elif c_upper in ['DATA_INCLUSAO', 'DATA', 'DATA INCLUSAO']:
+                mapping[col] = 'Data_Inclusao'
+            elif c_upper in ['CADASTRADO_POR', 'CADASTRADO POR', 'USUARIO']:
+                mapping[col] = 'Cadastrado_Por'
+        df.rename(columns=mapping, inplace=True)
+        if 'Documento' not in df.columns:
+            df['Documento'] = df.iloc[:, 0].astype(str) if len(df.columns) > 0 else ""
+        return df
+
     return pd.DataFrame(columns=["Documento", "Nome_Razao", "Motivo_Alerta", "Data_Inclusao", "Cadastrado_Por"])
 
 def salvar_blacklist_local(df):
@@ -513,13 +535,16 @@ with aba_nova:
     if st.button("🚀 INICIAR ANÁLISE DE RISCO E ESTEIRA DE CRÉDITO", type="primary", use_container_width=True):
         doc_limpo = re.sub(r'\D', '', doc_cliente)
         df_black = carregar_blacklist()
-        black_match = df_black[df_black['Documento'].str.replace(r'\D', '', regex=True) == doc_limpo] if doc_limpo and not df_black.empty else pd.DataFrame()
+        
+        black_match = pd.DataFrame()
+        if doc_limpo and not df_black.empty and 'Documento' in df_black.columns:
+            black_match = df_black[df_black['Documento'].astype(str).str.replace(r'\D', '', regex=True) == doc_limpo]
         
         if not nome_cliente or not doc_cliente or not equipamentos_selecionados or not documentos:
             st.error("⚠️ Preencha Nome, CPF/CNPJ, Selecione ao menos 1 Equipamento e anexe os Documentos.")
         elif not black_match.empty:
-            motivo = black_match.iloc[0]['Motivo_Alerta']
-            origem = black_match.iloc[0]['Cadastrado_Por']
+            motivo = black_match.iloc[0].get('Motivo_Alerta', 'Documento listado na Blacklist')
+            origem = black_match.iloc[0].get('Cadastrado_Por', 'Rede CDC')
             st.error(f"🚨 **BLOQUEIO IMEDIATO DE SEGURANÇA (BLACK LIST DA REDE)!**\n\nEste documento **({doc_cliente})** consta na Lista Negra.\n\n**Motivo:** {motivo}\n**Registrado por:** {origem}")
             salvar_no_historico(loja, usr_info['nome'], nome_cliente, doc_cliente, tipo_cliente, ", ".join(lista_nomes_finais), valor_total_reposicao, forma_pagamento, f"🔴 REPROVADO - BLACKLIST: {motivo}")
         elif not token_acesso_valido or not gcp_project_id:
