@@ -19,6 +19,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Tratamento para biblioteca PIL (Validação de Imagens)
+try:
+    from PIL import Image
+    PIL_INSTALLED = True
+except ImportError:
+    PIL_INSTALLED = False
+
 # Tratamento para leitura de PDF local
 try:
     import pypdf
@@ -43,6 +50,25 @@ try:
     REPORTLAB_INSTALLED = True
 except ImportError:
     REPORTLAB_INSTALLED = False
+
+# FUNÇÃO DE VALIDAÇÃO E NORMALIZAÇÃO DE IMAGENS (ANTI-ERRO 400)
+def validar_e_converter_imagem(bytes_img):
+    if not PIL_INSTALLED:
+        return None, None
+    try:
+        img = Image.open(io.BytesIO(bytes_img))
+        # Descarta elementos gráficos/técnicos minúsculos (padrões de segurança da CNH-e)
+        if img.width < 100 or img.height < 100:
+            return None, None
+        # Converte RGBA, CMYK, P ou 1 para RGB simples
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=85)
+        b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
+        return "image/jpeg", b64
+    except Exception:
+        return None, None
 
 # Estilização CSS Profissional
 st.markdown("""
@@ -114,7 +140,7 @@ if not st.session_state["logged_in"]:
                         st.error("❌ Credenciais inválidas.")
     st.stop()
 
-# --- AUTENTICAÇÃO GOOGLE CLOUD (PROTEGIDA E FLEXÍVEL) ---
+# --- AUTENTICAÇÃO GOOGLE CLOUD ---
 @st.cache_data(ttl=3000)
 def obter_token_gcp():
     if GOOGLE_AUTH_INSTALLED and "GCP_CREDENTIALS" in st.secrets:
@@ -124,7 +150,10 @@ def obter_token_gcp():
                 creds_json = json.loads(creds_raw)
             else:
                 creds_json = dict(creds_raw)
-                
+
+            if "private_key" in creds_json and isinstance(creds_json["private_key"], str):
+                creds_json["private_key"] = creds_json["private_key"].replace("\\n", "\n")
+
             project_id = creds_json.get("project_id")
             escopos = [
                 'https://www.googleapis.com/auth/cloud-platform',
@@ -558,13 +587,12 @@ with aba_nova:
                                         if txt and len(txt.strip()) > 5:
                                             texto_pdf += f"\n[Página {i+1} do PDF {doc.name}]:\n" + txt
                                         
+                                        # Extração com validação visual (elimina retículas/elementos da CNH-e)
                                         try:
                                             for img in page.images:
-                                                i_bytes = img.data
-                                                i_b64 = base64.b64encode(i_bytes).decode("utf-8")
-                                                ext = img.name.split(".")[-1].lower()
-                                                i_mime = "image/jpeg" if ext in ['jpg', 'jpeg'] else "image/png"
-                                                imagens_extraidas.append((i_mime, i_b64))
+                                                m_type, img_b64 = validar_e_converter_imagem(img.data)
+                                                if m_type and img_b64:
+                                                    imagens_extraidas.append((m_type, img_b64))
                                         except Exception:
                                             pass
 
@@ -582,8 +610,13 @@ with aba_nova:
                             else:
                                 payload_parts.append({"inlineData": {"mimeType": "application/pdf", "data": b64_data}})
                         else:
-                            mime_type = "image/jpeg" if nome_lc.endswith((".jpg", ".jpeg")) else "image/png"
-                            payload_parts.append({"inlineData": {"mimeType": mime_type, "data": b64_data}})
+                            # Validação de uploads de fotos (JPG / PNG)
+                            m_type, img_b64 = validar_e_converter_imagem(file_bytes)
+                            if m_type and img_b64:
+                                payload_parts.append({"inlineData": {"mimeType": m_type, "data": img_b64}})
+                            else:
+                                mime_fallback = "image/jpeg" if nome_lc.endswith((".jpg", ".jpeg")) else "image/png"
+                                payload_parts.append({"inlineData": {"mimeType": mime_fallback, "data": b64_data}})
 
                         if DRIVE_FOLDER_ID and arquivos_validos:
                             mime_drive = "application/pdf" if nome_lc.endswith(".pdf") else "image/jpeg"
