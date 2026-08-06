@@ -4,4 +4,4 @@ requests
 reportlab
 pypdf
 google-auth
-Pillow
+
