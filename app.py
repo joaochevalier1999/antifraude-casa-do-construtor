@@ -480,7 +480,7 @@ with aba_nova:
             if tipo_cliente == "Pessoa Jurídica (PJ)":
                 subtipo_pj = st.selectbox("🏢 Natureza Jurídica", ["Empresa Padrão (LTDA/SA)", "Condomínio", "MEI"])
                 col_pj1, col_pj2 = st.columns(2)
-                with col_pj1: nome_solicitante = st.text_input("Nome do Solicitante / Síndico")
+                with col_pj1: nome_solicitante = st.text_input("Nome do Solicitante / Síndico / Sócio")
                 with col_pj2: contato_solicitante = st.text_input("E-mail corporativo / WhatsApp")
 
         with col_a2:
@@ -490,11 +490,8 @@ with aba_nova:
                 forma_pagamento = st.selectbox("Condição de Pagamento Permitida", ["À Vista / Débito / Pix (Antecipado)"])
             else:
                 forma_pagamento = st.selectbox("💳 Condição de Pagamento Solicitada", ["À Vista / Débito / Pix", "Boleto 7 dias", "Boleto 14 dias", "Boleto 21 dias", "Boleto 28 dias"])
-                if subtipo_pj == "Empresa Padrão (LTDA/SA)":
-                    st.info("📄 **Checklist Documental PJ:**\n- Contrato Social / Requerimento Empresarial\n- CNH do Solicitante com vínculo verificado")
-                    referencias = st.text_area("📞 Feedback de Referências Comerciais", placeholder="Descreva os fornecedores consultados...")
-                elif subtipo_pj in ["Condomínio", "MEI"]:
-                    st.warning(f"📄 **Checklist Documental ({subtipo_pj}):**\n- Ata de eleição / Certificado MEI\n- CNH + Comprovante de Residência\n⚠️ **Limite:** Faturamento máximo de 7 dias.")
+                st.info("📄 **Checklist Documental Pessoa Jurídica (PJ):**\n- Contrato Social / Requerimento Empresarial / Cartão CNPJ\n- CNH ou RG do Sócio / Solicitante\n- Referências Comerciais Consultadas\n*(Nota: Comprovante de Residência NÃO é necessário para PJ)*")
+                referencias = st.text_area("📞 Referências Comerciais Consultadas", placeholder="Descreva os fornecedores e contatos consultados...")
 
     with st.container(border=True):
         st.markdown("#### 2️⃣ Equipamento(s) Solicitado(s)")
@@ -529,7 +526,14 @@ with aba_nova:
 
     with st.container(border=True):
         st.markdown("#### 📎 3️⃣ Documentação do Cliente (Upload)")
-        documentos = st.file_uploader("Arraste PDFs ou fotos (CNH, Comprovante de Residência/CELESC, Contrato, Serasa/SPC)", accept_multiple_files=True)
+        
+        # ORIENTAÇÃO DINÂMICA DE UPLOAD
+        if tipo_cliente == "Pessoa Jurídica (PJ)":
+            label_upload = "Arraste PDFs ou fotos (Contrato Social/CNPJ, CNH/RG do Sócio, Referências, Consultas SPC/Serasa/Consult Center)"
+        else:
+            label_upload = "Arraste PDFs ou fotos (CNH/RG, Comprovante de Residência/CELESC, Consultas SPC/Serasa/Consult Center)"
+            
+        documentos = st.file_uploader(label_upload, accept_multiple_files=True)
 
     st.write("<br>", unsafe_allow_html=True)
     if st.button("🚀 INICIAR ANÁLISE DE RISCO E ESTEIRA DE CRÉDITO", type="primary", use_container_width=True):
@@ -611,22 +615,24 @@ with aba_nova:
                         - Cliente: {nome_cliente} (CPF/CNPJ: {doc_cliente})
                         - Natureza: {tipo_cliente} ({subtipo_pj if subtipo_pj else 'Pessoa Física'})
                         - Solicitante / Contato: {nome_solicitante} | {contato_solicitante}
+                        - Referências Comerciais Consultadas: {referencias if referencias else 'Nenhuma informada'}
                         - Equipamento(s): {equipamentos_str}
                         - Valor Total de Reposição Risco: R$ {valor_total_reposicao:,.2f}
                         - Condição Solicitada: {forma_pagamento}
                         
-                        REGRA 0: DOCUMENTAÇÃO OBRIGATÓRIA (FALHA AUTOMÁTICA)
-                        - Você DEVE obrigatoriamente verificar as imagens/PDFs anexados.
-                        - Se o usuário enviou APENAS relatórios do Serasa/SPC/Consult Center e NÃO há nenhuma foto de Documento de Identidade (CNH ou RG com CPF) E nenhum Comprovante de Residência -> O PARECER DEVE SER IMEDIATAMENTE "🔴 REPROVADO". Motivo: Documentação incompleta (falta CNH e Comprovante). Não invente dados nem aprove sem ver a foto real do documento.
+                        REGRA 0: DOCUMENTAÇÃO OBRIGATÓRIA (REGRAS ESPECÍFICAS PF E PJ)
+                        - Você DEVE obrigatoriamente verificar os arquivos anexados.
+                        - SE FOR PESSOA FÍSICA (PF): É obrigatório haver Foto do Documento de Identidade (CNH ou RG) E Comprovante de Residência recente. Se enviou APENAS relatórios do SPC/Serasa sem CNH/RG e sem Comprovante de Residência -> O PARECER DEVE SER IMEDIATAMENTE "🔴 REPROVADO".
+                        - SE FOR PESSOA JURÍDICA (PJ): É obrigatório haver Contrato Social / Requerimento Empresarial / Cartão CNPJ E Documento de Identidade do Sócio/Solicitante (CNH ou RG).
+                        - ⚠️ REGRA CRÍTICA ABSOLUTA PARA PESSOA JURÍDICA (PJ): NÃO SOLICITE E NÃO EXIJA COMPROVANTE DE RESIDÊNCIA PARA PJ. O comprovante de residência é 100% DISPENSÁVEL E DESNECESSÁRIO para PJ. Jamais reprove, critique ou emita alerta sobre falta de comprovante de residência para PJ.
 
-                        REGRA 1: VALIDAÇÃO DO COMPROVANTE DE RESIDÊNCIA (PF)
-                        - O comprovante de residência deve ter no MÁXIMO 3 meses de emissão em relação a hoje ({mes_atual}). Faturas a vencer no próximo mês ou emitidas recentemente são 100% VÁLIDAS.
-                        - Faturas de Cartão de Crédito são aceitas (respeitando a regra dos 3 meses).
-                        - Titularidade: O comprovante deve estar no nome exato do cliente. EXCEÇÃO: Para equipamentos de baixo valor de risco, aceita-se no nome do Pai ou da Mãe (você deve conferir a filiação no RG/CNH anexado).
-                        - Contratos de Locação (Aluguel): SÓ SÃO VÁLIDOS se estiverem registrados em cartório, com data atual, E acompanhados de uma conta de consumo no nome do proprietário do imóvel (locador).
+                        REGRA 1: VALIDAÇÃO DO COMPROVANTE DE RESIDÊNCIA (EXCLUSIVO PARA PF)
+                        - Esta regra aplica-se APENAS a Pessoa Física (PF).
+                        - O comprovante de residência para PF deve ter no MÁXIMO 3 meses de emissão ({mes_atual}). Faturas a vencer no próximo mês ou emitidas recentemente são 100% VÁLIDAS.
+                        - Cartão de Crédito é aceito (regra 3 meses). Titularidade: nome do cliente ou pais (se comprovado vínculo no RG/CNH).
 
                         REGRA 2: ANÁLISE DE RESTRIÇÕES E CRÉDITO (SPC/SERASA)
-                        - O cliente NÃO precisa ter nome 100% limpo. Você deve analisar a ORIGEM da dívida.
+                        - O cliente NÃO precisa ter nome 100% limpo. Analise a ORIGEM da dívida.
                         - Restrições TOLERADAS (Aprove): Financiamento de Bancos Comerciais, Lojas de Varejo (ex: Havan, Renner), Telecomunicações (Claro, Vivo, Tim, Oi), Contas de consumo básicas atrasadas.
                         - Restrições GRAVES (Reprove imediatamente para faturamento): Dívidas com lojas de Materiais de Construção, Locadoras de Equipamentos, Dívidas de Aluguel/Imobiliárias, Cheques sem fundo repetitivos. Sinergia negativa com o nosso setor de atuação = Risco Alto.
 
@@ -641,13 +647,16 @@ with aba_nova:
                         - MEI e Condomínio: Boleto no máximo 7 dias.
                         - Empresa Padrão (LTDA/SA) > 1 ano de abertura (sem restrições graves no setor): Pode aprovar para os prazos solicitados (7, 14, 21 ou 28 dias).
 
-                        REGRA 4: DOCUMENTAÇÃO PJ
-                        - Contratos Sociais e Requerimentos de Empresário NÃO possuem data de validade (são históricos).
+                        REGRA 4: DOCUMENTAÇÃO PJ & REFERÊNCIAS COMERCIAIS
+                        - Contratos Sociais e Requerimentos de Empresário NÃO possuem data de validade (são constitutivos e históricos).
+                        - Valide a presença do Contrato Social / Estatuto / Certificado MEI e a CNH/RG do Sócio.
+                        - Avalie as Referências Comerciais informadas no cadastro.
+                        - REITERANDO: Comprovante de Residência NÃO é necessário para PJ.
 
                         REGRA 5: SINERGIA DAS 14 FASES DA OBRA E RISCO DE "LARANJA"
                         - Fases: 1.Canteiro | 2.Fundação | 3.Demolição | 4.Estrutura | 5.Alvenaria | 6.Cobertura | 7.Inst.Hidráulica | 8.Inst.Elétrica | 9.Piso Concreto | 10.Esquadrias | 11.Acabamento | 12.Pintura | 13.Jardinagem | 14.Limpeza.
                         - Analise os itens do pedido: {equipamentos_str}. Fazem sentido juntos na mesma fase da obra? 
-                        - Pedidos completamente desconexos feitos por Pessoa Física (Ex: Betoneira + Aspirador + Furadeira Magnética) sugerem altíssimo risco de que o cliente seja um "Laranja" alugando para terceiros. Alerte o balcão.
+                        - Pedidos completamente desconexos feitos por Pessoa Física sugerem risco de "Laranja" alugando para terceiros. Alerte o balcão.
 
                         FORMATO DA RESPOSTA OBRIGATÓRIO (Use títulos grandes com #):
                         Substitua o início com uma das opções exatas:
@@ -657,7 +666,7 @@ with aba_nova:
                         
                         **Resumo da Decisão:** (Motivo direto e claro, citando se faltou documento, restrição comercial ou processo criminal)
                         
-                        **Auditoria Documental:** (Detalhe explicitamente se a foto da CNH estava legível, se o comprovante estava no nome correto, validade de 3 meses, etc.)
+                        **Auditoria Documental:** (Para PJ: Detalhe explicitamente a verificação do Contrato Social/CNPJ, CNH/RG do Sócio e Referências Comerciais. NÃO cobre comprovante de residência para PJ. Para PF: Detalhe a CNH e o comprovante de residência)
                         
                         **Análise de Restrições (Serasa/SPC/Consult Center Criminais):** (Quais dívidas ou processos criminais o cliente possui? Destaque expressamente se houve ocorrência de crimes como estelionato, furto, roubo, receptação, etc.)
                         
