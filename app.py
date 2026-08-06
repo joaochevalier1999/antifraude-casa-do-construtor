@@ -543,13 +543,10 @@ with aba_nova:
                         nome_lc = doc.name.lower()
                         b64_data = base64.b64encode(file_bytes).decode("utf-8")
 
-                        # SOLUÇÃO HÍBRIDA (Manda o PDF visualmente + Extrai o texto para ajudar)
+                        # PROCESSAMENTO SEGURO DE PDFS
                         if nome_lc.endswith(".pdf"):
-                            
-                            # 1. Manda o PDF original para a visão do Gemini sempre
                             payload_parts.append({"inlineData": {"mimeType": "application/pdf", "data": b64_data}})
 
-                            # 2. Se o pypdf estiver instalado, tenta extrair os textos (Ex: SPC) para apoiar a leitura
                             if PYPDF_INSTALLED:
                                 try:
                                     reader = pypdf.PdfReader(io.BytesIO(file_bytes))
@@ -563,12 +560,11 @@ with aba_nova:
                                                 texto_pdf += f"\n[Página {i+1} do arquivo {doc.name}]:\n" + txt
                                         
                                         if texto_pdf.strip():
-                                            payload_parts.append({"text": f"\n--- TEXTO EXTRAÍDO COMO APOIO DO PDF ({doc.name}) ---\n{texto_pdf}\n--- FIM DO TEXTO DE APOIO ---\n"})
+                                            payload_parts.append({"text": f"\n--- TEXTO EXTRAÍDO DO PDF ({doc.name}) ---\n{texto_pdf}\n--- FIM DO TEXTO DE APOIO ---\n"})
                                 except Exception:
-                                    pass # Se falhar a extração de texto, o PDF visual (passo 1) já foi enviado
+                                    pass
                                     
                         else:
-                            # Se for Imagem JPG/PNG normal
                             mime_type = "image/jpeg" if nome_lc.endswith((".jpg", ".jpeg")) else "image/png"
                             payload_parts.append({"inlineData": {"mimeType": mime_type, "data": b64_data}})
 
@@ -607,7 +603,12 @@ with aba_nova:
                         REGRA 2: ANÁLISE DE RESTRIÇÕES E CRÉDITO (SPC/SERASA)
                         - O cliente NÃO precisa ter nome 100% limpo. Você deve analisar a ORIGEM da dívida.
                         - Restrições TOLERADAS (Aprove): Financiamento de Bancos Comerciais, Lojas de Varejo (ex: Havan, Renner), Telecomunicações (Claro, Vivo, Tim, Oi), Contas de consumo básicas atrasadas.
-                        - Restrições GRAVES (Reprove imediatamente para faturamento): Dívidas com lojas de Materiais de Construção, Locadoras de Equipamentos, Dívidas de Aluguel/Imobiliárias, Cheques sem fundo repetitivos, ou Estelionato. Sinergia negativa com o nosso setor de atuação = Risco Alto.
+                        - Restrições GRAVES (Reprove imediatamente para faturamento): Dívidas com lojas de Materiais de Construção, Locadoras de Equipamentos, Dívidas de Aluguel/Imobiliárias, Cheques sem fundo repetitivos. Sinergia negativa com o nosso setor de atuação = Risco Alto.
+
+                        REGRA 2.1: AUDITORIA DE PROCESSOS CRIMINAIS E ANTECEDENTES (CONSULT CENTER / CND / POLÍCIA / CERTIDÕES)
+                        - Você DEVE obrigatoriamente inspecionar os PDFs/imagens do Consult Center, CNDs Criminais ou pesquisas judiciais/policiais anexadas.
+                        - Se for identificada a presença de processos criminais ativos, inquéritos ou condenações por: ESTELIONATO, FRAUDES, ROUBO, ASSALTO, FURTO, RECEPTAÇÃO, TRÁFICO DE DROGAS, HOMICÍDIO, EXTORSÃO, ORGANIZAÇÃO CRIMINOSA, FORMAÇÃO DE QUADRILHA ou qualquer crime grave contra o patrimônio ou contra a pessoa -> O PARECER DEVE SER IMEDIATAMENTE "🔴 REPROVADO".
+                        - TRAVA DE SEGURANÇA: NUNCA aprove ou conceda limite a clientes com histórico dos crimes listados acima. Indique no parecer o motivo: "Histórico de Processo Criminal Incompatível (Risco Corporativo)".
 
                         REGRA 3: PRAZOS E CONDIÇÕES DE PAGAMENTO (INEGOCIÁVEL)
                         - Pessoa Física (PF): Pagamento EXCLUSIVAMENTE À Vista / PIX Antecipado. Boleto NUNCA é permitido para PF.
@@ -629,11 +630,11 @@ with aba_nova:
                         # 🟡 APROVADO COM RESTRIÇÃO
                         # 🔴 REPROVADO
                         
-                        **Resumo da Decisão:** (Motivo direto e claro, citando se faltou documento ou qual foi a trava)
+                        **Resumo da Decisão:** (Motivo direto e claro, citando se faltou documento, restrição comercial ou processo criminal)
                         
                         **Auditoria Documental:** (Detalhe explicitamente se a foto da CNH estava legível, se o comprovante estava no nome correto, validade de 3 meses, etc.)
                         
-                        **Análise de Restrições (Serasa/SPC):** (Quais dívidas o cliente possui? A dívida foi tolerada ou pertence ao setor de risco como material de construção?)
+                        **Análise de Restrições (Serasa/SPC/Consult Center Criminais):** (Quais dívidas ou processos criminais o cliente possui? Destaque expressamente se houve ocorrência de crimes como estelionato, furto, roubo, receptação, etc.)
                         
                         **Análise de Sinergia dos Equipamentos:** (Comente se os equipamentos pertencem à mesma fase da obra)
                         
